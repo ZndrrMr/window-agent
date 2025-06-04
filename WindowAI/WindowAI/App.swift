@@ -31,8 +31,8 @@ class WindowAIController: HotkeyManagerDelegate, LLMServiceDelegate {
         setupComponents()
         setupNotifications()
         
-        // Test LLM integration
-        testLLMIntegration()
+        // Test LLM integration (disabled until permissions are working)
+        // testLLMIntegration()
     }
     
     // MARK: - Application Setup
@@ -264,12 +264,14 @@ extension WindowAIController {
 // MARK: - Main Entry Point
 @main
 struct Main {
+    static let appDelegate = AppDelegate()
+    
     static func main() {
         // Use the shared NSApplication instance
         let app = NSApplication.shared
         
         // Set our custom app as the delegate
-        app.delegate = AppDelegate()
+        app.delegate = appDelegate
         
         app.run()
     }
@@ -281,9 +283,42 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Check and request necessary permissions
+        checkPermissions()
+        
         windowAIController = WindowAIController()
         setupMenuBar()
         windowAIController?.checkAndShowOnboarding()
+    }
+    
+    private func checkPermissions() {
+        // Check accessibility permissions first
+        if !PermissionManager.hasAccessibilityPermissions() {
+            showAccessibilityPermissionDialog()
+        }
+    }
+    
+    private func showAccessibilityPermissionDialog() {
+        let alert = NSAlert()
+        alert.messageText = "WindowAI Needs Accessibility Access"
+        alert.informativeText = "WindowAI requires accessibility permissions to control and position windows from other applications.\n\n1. Click 'Open System Preferences'\n2. Find 'WindowAI' in the list\n3. Check the box next to WindowAI\n4. Restart the app if needed"
+        alert.addButton(withTitle: "Open System Preferences")
+        alert.addButton(withTitle: "Try Again")
+        alert.addButton(withTitle: "Cancel")
+        alert.alertStyle = .informational
+        
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            // First try the automatic prompt
+            PermissionManager.requestAccessibilityPermissions()
+            // Then open system preferences manually
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                PermissionManager.openAccessibilitySettings()
+            }
+        } else if response == .alertSecondButtonReturn {
+            // Just try the automatic prompt again
+            PermissionManager.requestAccessibilityPermissions()
+        }
     }
     
     func applicationWillTerminate(_ notification: Notification) {
@@ -307,6 +342,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         menu.addItem(NSMenuItem(title: "Show Command Window", action: #selector(showCommandWindow), keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
+        menu.addItem(NSMenuItem(title: "Test LLM Integration", action: #selector(testLLMIntegration), keyEquivalent: ""))
+        menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Settings...", action: #selector(showSettings), keyEquivalent: ","))
         menu.addItem(NSMenuItem(title: "About WindowAI", action: #selector(showAbout), keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
@@ -326,5 +363,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     @objc private func showAbout() {
         NSApp.orderFrontStandardAboutPanel(nil)
+    }
+    
+    @objc private func testLLMIntegration() {
+        windowAIController?.testLLMIntegration()
     }
 }

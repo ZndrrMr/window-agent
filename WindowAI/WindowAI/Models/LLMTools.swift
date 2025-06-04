@@ -5,7 +5,7 @@ import CoreGraphics
 struct LLMTool: Codable {
     let name: String
     let description: String
-    let inputSchema: ToolInputSchema
+    let input_schema: ToolInputSchema
     
     struct ToolInputSchema: Codable {
         let type: String = "object"
@@ -98,7 +98,7 @@ class WindowManagementTools {
     static let moveWindowTool = LLMTool(
         name: "move_window",
         description: "Move a window to a specific position on the screen",
-        inputSchema: LLMTool.ToolInputSchema(
+        input_schema: LLMTool.ToolInputSchema(
             properties: [
                 "app_name": LLMTool.ToolInputSchema.PropertyDefinition(
                     type: "string",
@@ -122,7 +122,7 @@ class WindowManagementTools {
     static let resizeWindowTool = LLMTool(
         name: "resize_window",
         description: "Resize a window to a specific size",
-        inputSchema: LLMTool.ToolInputSchema(
+        input_schema: LLMTool.ToolInputSchema(
             properties: [
                 "app_name": LLMTool.ToolInputSchema.PropertyDefinition(
                     type: "string",
@@ -142,7 +142,7 @@ class WindowManagementTools {
     static let openAppTool = LLMTool(
         name: "open_app",
         description: "Open an application, optionally at a specific position and size",
-        inputSchema: LLMTool.ToolInputSchema(
+        input_schema: LLMTool.ToolInputSchema(
             properties: [
                 "app_name": LLMTool.ToolInputSchema.PropertyDefinition(
                     type: "string",
@@ -167,7 +167,7 @@ class WindowManagementTools {
     static let closeAppTool = LLMTool(
         name: "close_app",
         description: "Close an application or specific window",
-        inputSchema: LLMTool.ToolInputSchema(
+        input_schema: LLMTool.ToolInputSchema(
             properties: [
                 "app_name": LLMTool.ToolInputSchema.PropertyDefinition(
                     type: "string",
@@ -182,7 +182,7 @@ class WindowManagementTools {
     static let focusWindowTool = LLMTool(
         name: "focus_window",
         description: "Bring a window to the front and focus it",
-        inputSchema: LLMTool.ToolInputSchema(
+        input_schema: LLMTool.ToolInputSchema(
             properties: [
                 "app_name": LLMTool.ToolInputSchema.PropertyDefinition(
                     type: "string",
@@ -197,7 +197,7 @@ class WindowManagementTools {
     static let arrangeWorkspaceTool = LLMTool(
         name: "arrange_workspace",
         description: "Arrange windows for a specific workflow or context",
-        inputSchema: LLMTool.ToolInputSchema(
+        input_schema: LLMTool.ToolInputSchema(
             properties: [
                 "context": LLMTool.ToolInputSchema.PropertyDefinition(
                     type: "string",
@@ -213,7 +213,7 @@ class WindowManagementTools {
     static let snapWindowTool = LLMTool(
         name: "snap_window",
         description: "Snap a window to a position with automatic sizing (combines move and resize)",
-        inputSchema: LLMTool.ToolInputSchema(
+        input_schema: LLMTool.ToolInputSchema(
             properties: [
                 "app_name": LLMTool.ToolInputSchema.PropertyDefinition(
                     type: "string",
@@ -238,7 +238,7 @@ class WindowManagementTools {
     static let minimizeWindowTool = LLMTool(
         name: "minimize_window",
         description: "Minimize a window to the dock",
-        inputSchema: LLMTool.ToolInputSchema(
+        input_schema: LLMTool.ToolInputSchema(
             properties: [
                 "app_name": LLMTool.ToolInputSchema.PropertyDefinition(
                     type: "string",
@@ -253,7 +253,7 @@ class WindowManagementTools {
     static let maximizeWindowTool = LLMTool(
         name: "maximize_window",
         description: "Maximize a window to fill the screen",
-        inputSchema: LLMTool.ToolInputSchema(
+        input_schema: LLMTool.ToolInputSchema(
             properties: [
                 "app_name": LLMTool.ToolInputSchema.PropertyDefinition(
                     type: "string",

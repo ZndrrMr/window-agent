@@ -12,13 +12,22 @@ class PermissionManager {
     static func requestAccessibilityPermissions() {
         // This will prompt the user if permissions aren't granted
         let _ = AXIsProcessTrustedWithOptions([
-            kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true
+            kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true
         ] as CFDictionary)
     }
     
     static func openAccessibilitySettings() {
-        let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
-        NSWorkspace.shared.open(url)
+        // Try modern macOS 13+ format first
+        if let url = URL(string: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension") {
+            if NSWorkspace.shared.open(url) {
+                return
+            }
+        }
+        
+        // Fall back to older format
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+            NSWorkspace.shared.open(url)
+        }
     }
     
     // MARK: - Screen Recording Permissions (if needed for screenshots)
