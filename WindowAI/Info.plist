@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Bundle Information -->
+    <key>CFBundleDisplayName</key>
+    <string>WindowAI</string>
+    
+    <key>CFBundleName</key>
+    <string>WindowAI</string>
+    
+    <key>CFBundleIdentifier</key>
+    <string>com.yourcompany.windowai</string>
+    
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    
+    <key>CFBundleShortVersionString</key>
+    <string>1.0.0</string>
+    
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    
+    <key>CFBundleSignature</key>
+    <string>????</string>
+    
+    <!-- Executable Information -->
+    <key>CFBundleExecutable</key>
+    <string>WindowAI</string>
+    
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    
+    <!-- macOS Version Requirements -->
+    <key>LSMinimumSystemVersion</key>
+    <string>12.0</string>
+    
+    <!-- App Category -->
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.productivity</string>
+    
+    <!-- Privacy Permissions -->
+    <key>NSAppleEventsUsageDescription</key>
+    <string>WindowAI needs to send Apple Events to control other applications and manage windows.</string>
+    
+    <key>NSSystemAdministrationUsageDescription</key>
+    <string>WindowAI needs system administration access to manage windows across all applications.</string>
+    
+    <!-- App Behavior -->
+    <key>LSUIElement</key>
+    <true/>
+    
+    <key>LSBackgroundOnly</key>
+    <false/>
+    
+    <!-- Network Usage (for LLM API calls) -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <false/>
+        <key>NSExceptionDomains</key>
+        <dict>
+            <key>api.openai.com</key>
+            <dict>
+                <key>NSExceptionRequiresForwardSecrecy</key>
+                <false/>
+                <key>NSExceptionMinimumTLSVersion</key>
+                <string>TLSv1.2</string>
+                <key>NSThirdPartyExceptionRequiresForwardSecrecy</key>
+                <false/>
+            </dict>
+            <key>api.anthropic.com</key>
+            <dict>
+                <key>NSExceptionRequiresForwardSecrecy</key>
+                <false/>
+                <key>NSExceptionMinimumTLSVersion</key>
+                <string>TLSv1.2</string>
+                <key>NSThirdPartyExceptionRequiresForwardSecrecy</key>
+                <false/>
+            </dict>
+        </dict>
+    </dict>
+    
+    <!-- Supported Document Types (if needed) -->
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <!-- Currently no document types supported -->
+    </array>
+    
+    <!-- URL Schemes (for potential future integrations) -->
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>WindowAI URL</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>windowai</string>
+            </array>
+        </dict>
+    </array>
+    
+    <!-- App Icon -->
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    
+    <!-- Launch Services -->
+    <key>LSHasLocalizedDisplayName</key>
+    <false/>
+    
+    <!-- File system access -->
+    <key>NSDesktopFolderUsageDescription</key>
+    <string>WindowAI may need to access files on your desktop for window management operations.</string>
+    
+    <key>NSDocumentsFolderUsageDescription</key>
+    <string>WindowAI may need to access your documents for window management operations.</string>
+    
+    <!-- Copyright -->
+    <key>NSHumanReadableCopyright</key>
+    <string>Copyright © 2024 Your Company. All rights reserved.</string>
+    
+    <!-- Hardened Runtime (for notarization) -->
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+    
+    <key>com.apple.security.network.client</key>
+    <true/>
+    
+    <!-- Principal Class -->
+    <key>NSPrincipalClass</key>
+    <string>WindowAI.WindowAIApp</string>
+    
+    <!-- SwiftUI App -->
+    <key>NSMainStoryboardFile</key>
+    <string></string>
+    
+    <!-- Sparkle Auto-updater (if using) -->
+    <key>SUFeedURL</key>
+    <string>https://yourwebsite.com/appcast.xml</string>
+    
+    <key>SUPublicEDKey</key>
+    <string>YOUR_SPARKLE_PUBLIC_KEY</string>
+    
+    <key>SUEnableAutomaticChecks</key>
+    <true/>
+</dict>
+</plist>
