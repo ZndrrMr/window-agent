@@ -139,7 +139,7 @@ class LLMService {
     
     private func parseAnthropicResponse(_ data: Data) throws -> LLMResponse {
         // TODO: Parse Anthropic response format
-        throw LLMServiceError.parssingFailed
+        throw LLMServiceError.parsingFailed
     }
     
     // MARK: - Validation
@@ -159,7 +159,7 @@ class LLMService {
 enum LLMServiceError: Error, LocalizedError {
     case notImplemented
     case invalidAPIKey
-    case parssingFailed
+    case parsingFailed
     case networkError(Error)
     case rateLimitExceeded
     case invalidResponse
@@ -170,7 +170,7 @@ enum LLMServiceError: Error, LocalizedError {
             return "This feature is not yet implemented"
         case .invalidAPIKey:
             return "Invalid or missing API key"
-        case .parssingFailed:
+        case .parsingFailed:
             return "Failed to parse LLM response"
         case .networkError(let error):
             return "Network error: \(error.localizedDescription)"

@@ -1,8 +1,7 @@
 import Cocoa
 import SwiftUI
 
-@main
-class WindowAIApp: NSApplication {
+class WindowAIController: HotkeyManagerDelegate, LLMServiceDelegate {
     
     // MARK: - Core Components
     private let hotkeyManager = HotkeyManager()
@@ -27,25 +26,16 @@ class WindowAIApp: NSApplication {
     private let preferences = UserPreferences.shared
     private var isProcessingCommand = false
     
-    override init() {
-        super.init()
-        
+    init() {
         setupApplication()
         setupComponents()
         setupNotifications()
-    }
-    
-    required init?(coder: NSCoder) {
-        super.init(coder: coder)
     }
     
     // MARK: - Application Setup
     private func setupApplication() {
         // Hide dock icon (we'll show in menu bar instead)
         NSApp.setActivationPolicy(.accessory)
-        
-        // Create app delegate
-        self.delegate = AppDelegate(app: self)
         
         // Track app launch
         analyticsService.trackAppLaunched()
@@ -235,7 +225,7 @@ class WindowAIApp: NSApplication {
 }
 
 // MARK: - HotkeyManagerDelegate
-extension WindowAIApp: HotkeyManagerDelegate {
+extension WindowAIController {
     func hotkeyPressed() {
         if commandWindow.isVisible {
             hideCommandWindow()
@@ -246,7 +236,7 @@ extension WindowAIApp: HotkeyManagerDelegate {
 }
 
 // MARK: - LLMServiceDelegate
-extension WindowAIApp: LLMServiceDelegate {
+extension WindowAIController {
     func llmService(_ service: LLMService, didReceiveResponse response: LLMResponse) {
         // This is handled in the async processUserCommand method
     }
@@ -260,29 +250,39 @@ extension WindowAIApp: LLMServiceDelegate {
     }
 }
 
-// MARK: - App Delegate
+
+// MARK: - Main Entry Point
+@main
+struct Main {
+    static func main() {
+        // Use the shared NSApplication instance
+        let app = NSApplication.shared
+        
+        // Set our custom app as the delegate
+        app.delegate = AppDelegate()
+        
+        app.run()
+    }
+}
+
+// MARK: - Custom App Delegate
 class AppDelegate: NSObject, NSApplicationDelegate {
-    private let app: WindowAIApp
+    private var windowAIController: WindowAIController?
     private var statusItem: NSStatusItem?
     
-    init(app: WindowAIApp) {
-        self.app = app
-        super.init()
-    }
-    
     func applicationDidFinishLaunching(_ notification: Notification) {
+        windowAIController = WindowAIController()
         setupMenuBar()
-        app.checkAndShowOnboarding()
+        windowAIController?.checkAndShowOnboarding()
     }
     
     func applicationWillTerminate(_ notification: Notification) {
-        // Save any pending data
         UserPreferences.shared.savePreferences()
     }
     
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag {
-            app.showCommandWindow()
+            windowAIController?.showCommandWindow()
         }
         return true
     }
@@ -307,11 +307,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     @objc private func showCommandWindow() {
-        app.showCommandWindow()
+        windowAIController?.showCommandWindow()
     }
     
     @objc private func showSettings() {
-        app.showSettings()
+        windowAIController?.showSettings()
     }
     
     @objc private func showAbout() {

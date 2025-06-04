@@ -1,8 +1,9 @@
 import Foundation
 import CoreGraphics
+import Combine
 
 // MARK: - User Preferences
-class UserPreferences: ObservableObject, Codable {
+class UserPreferences: ObservableObject {
     
     // MARK: - Hotkey Settings
     @Published var hotkeyEnabled: Bool = true
@@ -53,19 +54,6 @@ class UserPreferences: ObservableObject, Codable {
     @Published var verboseLogging: Bool = false
     @Published var useLocalFallback: Bool = false
     
-    // MARK: - Coding Keys for Persistence
-    enum CodingKeys: String, CodingKey {
-        case hotkeyEnabled, hotkeyKeyCode, hotkeyModifiers
-        case llmProvider, openAIAPIKey, anthropicAPIKey, model, maxTokens, temperature
-        case showOnboarding, commandWindowOpacity, commandWindowCornerRadius
-        case showCommandSuggestions, autoHideDelay
-        case defaultWindowGap, respectDockSize, respectMenuBar
-        case animateWindowMovement, animationDuration
-        case codingApps, writingApps, researchApps, communicationApps, designApps
-        case enableAnalytics, enableCrashReporting, shareUsageData
-        case subscriptionStatus, subscriptionExpiryDate, lastSubscriptionCheck
-        case debugMode, verboseLogging, useLocalFallback
-    }
     
     // MARK: - Singleton
     static let shared = UserPreferences()

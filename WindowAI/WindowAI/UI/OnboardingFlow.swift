@@ -60,7 +60,6 @@ struct OnboardingFlow: View {
                 TryItOutStep()
                     .tag(3)
             }
-            .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
             
             // Navigation buttons
             HStack {

@@ -232,30 +232,36 @@ class AnalyticsService {
 }
 
 // MARK: - Supporting Types
+enum PerformanceMetric: String, CaseIterable {
+    case appLaunchTime = "app_launch_time"
+    case commandProcessingTime = "command_processing_time"
+    case windowOperationTime = "window_operation_time"
+    case llmResponseTime = "llm_response_time"
+    case memoryUsage = "memory_usage"
+    case cpuUsage = "cpu_usage"
+    
+    var unit: String {
+        switch self {
+        case .appLaunchTime, .commandProcessingTime, .windowOperationTime, .llmResponseTime:
+            return "milliseconds"
+        case .memoryUsage:
+            return "MB"
+        case .cpuUsage:
+            return "percent"
+        }
+    }
+}
+
 struct AnalyticsEvent: Codable {
     let name: String
-    let properties: [String: Any]
+    let properties: [String: String]
     let timestamp: Date
     
-    init(name: String, properties: [String: Any]) {
+    init(name: String, properties: [String: Any] = [:]) {
         self.name = name
-        self.properties = properties
+        // Convert Any values to String representations
+        self.properties = properties.mapValues { String(describing: $0) }
         self.timestamp = Date()
-    }
-    
-    // Custom encoding to handle Any type
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(name, forKey: .name)
-        try container.encode(timestamp, forKey: .timestamp)
-        
-        // Convert properties to JSON data
-        let jsonData = try JSONSerialization.data(withJSONObject: properties)
-        try container.encode(jsonData, forKey: .properties)
-    }
-    
-    enum CodingKeys: String, CodingKey {
-        case name, properties, timestamp
     }
 }
 
@@ -266,21 +272,4 @@ enum SubscriptionEventType: String, CaseIterable {
     case expired = "expired"
     case upgraded = "upgraded"
     case downgraded = "downgraded"
-}
-
-enum PerformanceMetric: String, CaseIterable {
-    case commandExecutionTime = "command_execution_time"
-    case llmResponseTime = "llm_response_time"
-    case windowDiscoveryTime = "window_discovery_time"
-    case hotkeyResponseTime = "hotkey_response_time"
-    case memoryUsage = "memory_usage"
-    
-    var unit: String {
-        switch self {
-        case .commandExecutionTime, .llmResponseTime, .windowDiscoveryTime, .hotkeyResponseTime:
-            return "milliseconds"
-        case .memoryUsage:
-            return "megabytes"
-        }
-    }
 }

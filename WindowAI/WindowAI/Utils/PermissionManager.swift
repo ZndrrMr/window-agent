@@ -1,5 +1,6 @@
 import Foundation
 import ApplicationServices
+import Cocoa
 
 class PermissionManager {
     
