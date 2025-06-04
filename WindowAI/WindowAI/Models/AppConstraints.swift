@@ -69,7 +69,7 @@ enum AppCategory: String, Codable, CaseIterable {
 // MARK: - App Constraints Manager
 class AppConstraintsManager {
     private var constraints: [String: AppConstraints] = [:]
-    private let userDefinedConstraints: [String: AppConstraints] = [:]
+    private var userDefinedConstraints: [String: AppConstraints] = [:]
     
     static let shared = AppConstraintsManager()
     
@@ -89,7 +89,23 @@ class AppConstraintsManager {
     }
     
     func addUserConstraints(_ constraints: AppConstraints) {
-        // TODO: Save user-defined constraints
+        userDefinedConstraints[constraints.bundleID] = constraints
+        saveUserConstraints()
+    }
+    
+    func removeUserConstraints(for bundleID: String) {
+        userDefinedConstraints.removeValue(forKey: bundleID)
+        saveUserConstraints()
+    }
+    
+    func getAllConstraints() -> [AppConstraints] {
+        var allConstraints = Array(constraints.values)
+        allConstraints.append(contentsOf: userDefinedConstraints.values)
+        return allConstraints
+    }
+    
+    func getConstraintsByCategory(_ category: AppCategory) -> [AppConstraints] {
+        return getAllConstraints().filter { $0.category == category }
     }
     
     func validateWindowSize(_ size: CGSize, for bundleID: String) -> CGSize {
@@ -106,7 +122,84 @@ class AppConstraintsManager {
             validatedSize.height = min(maxHeight, validatedSize.height)
         }
         
+        // Apply aspect ratio if required
+        if constraints.prefersFixedAspectRatio, let aspectRatio = constraints.aspectRatio {
+            let currentRatio = validatedSize.width / validatedSize.height
+            if abs(currentRatio - aspectRatio) > 0.1 {
+                // Adjust height to maintain aspect ratio
+                validatedSize.height = validatedSize.width / aspectRatio
+                
+                // Re-check height constraints
+                validatedSize.height = max(constraints.minHeight, validatedSize.height)
+                if let maxHeight = constraints.maxHeight {
+                    validatedSize.height = min(maxHeight, validatedSize.height)
+                    // If height was clamped, adjust width accordingly
+                    validatedSize.width = validatedSize.height * aspectRatio
+                }
+            }
+        }
+        
         return validatedSize
+    }
+    
+    func validateWindowBounds(_ bounds: CGRect, for bundleID: String, screenBounds: CGRect) -> CGRect {
+        let validatedSize = validateWindowSize(bounds.size, for: bundleID)
+        
+        var validatedBounds = bounds
+        validatedBounds.size = validatedSize
+        
+        // Ensure window fits within screen bounds
+        if validatedBounds.maxX > screenBounds.maxX {
+            validatedBounds.origin.x = screenBounds.maxX - validatedBounds.width
+        }
+        if validatedBounds.maxY > screenBounds.maxY {
+            validatedBounds.origin.y = screenBounds.maxY - validatedBounds.height
+        }
+        if validatedBounds.minX < screenBounds.minX {
+            validatedBounds.origin.x = screenBounds.minX
+        }
+        if validatedBounds.minY < screenBounds.minY {
+            validatedBounds.origin.y = screenBounds.minY
+        }
+        
+        return validatedBounds
+    }
+    
+    func canFullscreen(for bundleID: String) -> Bool {
+        return getConstraints(for: bundleID)?.supportsFullscreen ?? true
+    }
+    
+    func getOptimalSize(for bundleID: String, screenSize: CGSize) -> CGSize {
+        guard let constraints = getConstraints(for: bundleID) else {
+            return CGSize(width: screenSize.width * 0.6, height: screenSize.height * 0.7)
+        }
+        
+        // Start with category-based optimal size
+        var optimalSize: CGSize
+        
+        switch constraints.category {
+        case .codeEditor:
+            optimalSize = CGSize(width: screenSize.width * 0.75, height: screenSize.height * 0.85)
+        case .browser:
+            optimalSize = CGSize(width: screenSize.width * 0.7, height: screenSize.height * 0.8)
+        case .communication:
+            optimalSize = CGSize(width: min(900, screenSize.width * 0.45), height: screenSize.height * 0.7)
+        case .terminal:
+            optimalSize = CGSize(width: screenSize.width * 0.6, height: screenSize.height * 0.65)
+        case .design:
+            optimalSize = CGSize(width: screenSize.width * 0.85, height: screenSize.height * 0.9)
+        case .productivity:
+            optimalSize = CGSize(width: screenSize.width * 0.65, height: screenSize.height * 0.75)
+        case .media:
+            optimalSize = CGSize(width: screenSize.width * 0.8, height: screenSize.height * 0.8)
+        case .database:
+            optimalSize = CGSize(width: screenSize.width * 0.8, height: screenSize.height * 0.85)
+        case .other:
+            optimalSize = CGSize(width: screenSize.width * 0.6, height: screenSize.height * 0.7)
+        }
+        
+        // Apply constraints
+        return validateWindowSize(optimalSize, for: bundleID)
     }
     
     // MARK: - Built-in Constraints Database
@@ -156,7 +249,23 @@ class AppConstraintsManager {
             AppConstraints(bundleID: "com.apple.mail", appName: "Mail", 
                           minWidth: 600, minHeight: 400, category: .communication),
             AppConstraints(bundleID: "com.apple.Notes", appName: "Notes", 
-                          minWidth: 400, minHeight: 300, category: .productivity)
+                          minWidth: 400, minHeight: 300, category: .productivity),
+            AppConstraints(bundleID: "com.apple.systempreferences", appName: "System Preferences", 
+                          minWidth: 600, minHeight: 400, maxWidth: 900, maxHeight: 700, category: .productivity),
+            AppConstraints(bundleID: "com.apple.ActivityMonitor", appName: "Activity Monitor", 
+                          minWidth: 500, minHeight: 400, category: .productivity),
+            
+            // Additional Popular Apps
+            AppConstraints(bundleID: "com.spotify.client", appName: "Spotify", 
+                          minWidth: 600, minHeight: 400, category: .media),
+            AppConstraints(bundleID: "com.adobe.Photoshop", appName: "Adobe Photoshop", 
+                          minWidth: 800, minHeight: 600, category: .design),
+            AppConstraints(bundleID: "notion.id", appName: "Notion", 
+                          minWidth: 500, minHeight: 400, category: .productivity),
+            AppConstraints(bundleID: "com.linear", appName: "Linear", 
+                          minWidth: 600, minHeight: 500, category: .productivity),
+            AppConstraints(bundleID: "com.1password.1password-macos", appName: "1Password 7", 
+                          minWidth: 400, minHeight: 500, maxWidth: 600, category: .productivity)
         ]
         
         for app in builtInApps {
@@ -165,10 +274,34 @@ class AppConstraintsManager {
     }
     
     private func loadUserConstraints() {
-        // TODO: Load user-defined constraints from file
+        guard let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            return
+        }
+        
+        let constraintsURL = documentsPath.appendingPathComponent("WindowAI_UserConstraints.json")
+        
+        do {
+            let data = try Data(contentsOf: constraintsURL)
+            let decoded = try JSONDecoder().decode([String: AppConstraints].self, from: data)
+            self.userDefinedConstraints = decoded
+        } catch {
+            // File doesn't exist or can't be decoded, start with empty constraints
+            print("Could not load user constraints: \(error)")
+        }
     }
     
     func saveUserConstraints() {
-        // TODO: Save user-defined constraints to file
+        guard let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            return
+        }
+        
+        let constraintsURL = documentsPath.appendingPathComponent("WindowAI_UserConstraints.json")
+        
+        do {
+            let data = try JSONEncoder().encode(userDefinedConstraints)
+            try data.write(to: constraintsURL)
+        } catch {
+            print("Could not save user constraints: \(error)")
+        }
     }
 }

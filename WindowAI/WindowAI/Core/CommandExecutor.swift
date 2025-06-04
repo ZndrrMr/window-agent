@@ -4,10 +4,12 @@ import Foundation
 class CommandExecutor {
     private let windowManager: WindowManager
     private let appLauncher: AppLauncher
+    private let windowPositioner: WindowPositioner
     
     init(windowManager: WindowManager, appLauncher: AppLauncher) {
         self.windowManager = windowManager
         self.appLauncher = appLauncher
+        self.windowPositioner = WindowPositioner(windowManager: windowManager)
     }
     
     // MARK: - Command Execution
@@ -17,20 +19,7 @@ class CommandExecutor {
     }
     
     func executeCommand(_ command: WindowCommand) async -> CommandResult {
-        switch command.action {
-        case .open:
-            return await executeOpenCommand(command)
-        case .move:
-            return await executeMoveCommand(command)
-        case .resize:
-            return await executeResizeCommand(command)
-        case .focus:
-            return await executeFocusCommand(command)
-        case .arrange:
-            return await executeArrangeCommand(command)
-        case .close:
-            return await executeCloseCommand(command)
-        }
+        return windowPositioner.executeCommand(command)
     }
     
     // MARK: - Individual Command Handlers

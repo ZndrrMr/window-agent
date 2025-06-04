@@ -7,7 +7,7 @@ class WindowAIController: HotkeyManagerDelegate, LLMServiceDelegate {
     private let hotkeyManager = HotkeyManager()
     private let windowManager = WindowManager()
     private let appLauncher = AppLauncher()
-    private let llmService = LLMService()
+    private lazy var llmService = LLMService(windowManager: windowManager)
     private let subscriptionService = SubscriptionService()
     private let analyticsService = AnalyticsService()
     
@@ -30,6 +30,9 @@ class WindowAIController: HotkeyManagerDelegate, LLMServiceDelegate {
         setupApplication()
         setupComponents()
         setupNotifications()
+        
+        // Test LLM integration
+        testLLMIntegration()
     }
     
     // MARK: - Application Setup
@@ -127,6 +130,13 @@ class WindowAIController: HotkeyManagerDelegate, LLMServiceDelegate {
             showOnboarding()
         }
     }
+    func testLLMIntegration() {
+          Task {
+              let tester = LLMTestInterface()
+              tester.setupWithAPIKey("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")
+              await tester.testCommand("Open Safari and put it on the left half")
+          }
+      }
     
     // MARK: - Command Processing
     @objc private func handleCommandEntered(_ notification: Notification) {

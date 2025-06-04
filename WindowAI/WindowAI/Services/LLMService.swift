@@ -9,44 +9,59 @@ class LLMService {
     weak var delegate: LLMServiceDelegate?
     private let preferences = UserPreferences.shared
     private var urlSession: URLSession
+    private var claudeService: ClaudeLLMService?
+    private let windowManager: WindowManager
     
-    init() {
+    init(windowManager: WindowManager) {
+        self.windowManager = windowManager
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30.0
         config.timeoutIntervalForResource = 60.0
         self.urlSession = URLSession(configuration: config)
+        
+        setupClaudeService()
+    }
+    
+    private func setupClaudeService() {
+        if !preferences.anthropicAPIKey.isEmpty {
+            claudeService = ClaudeLLMService(apiKey: preferences.anthropicAPIKey)
+        }
     }
     
     // MARK: - Public API
     func processCommand(_ userInput: String) async throws -> LLMResponse {
-        let context = await buildContext()
-        let request = LLMRequest(userInput: userInput, context: context)
-        
-        switch preferences.llmProvider {
-        case .openAI:
-            return try await processWithOpenAI(request)
-        case .anthropic:
-            return try await processWithAnthropic(request)
-        case .local:
-            return try await processWithLocalModel(request)
+        // Always use Claude for now since it's the most capable
+        return try await processWithClaude(userInput)
+    }
+    
+    private func processWithClaude(_ userInput: String) async throws -> LLMResponse {
+        guard let claude = claudeService else {
+            throw LLMServiceError.invalidAPIKey
         }
+        
+        let context = claude.buildCurrentContext(windowManager: windowManager)
+        let commands = try await claude.processCommand(userInput, context: context)
+        
+        return LLMResponse(
+            commands: commands,
+            explanation: "Processed \(commands.count) window management command(s)",
+            confidence: 0.95,
+            processingTime: nil
+        )
     }
     
     // MARK: - Provider-Specific Implementations
     private func processWithOpenAI(_ request: LLMRequest) async throws -> LLMResponse {
-        let url = URL(string: "https://api.openai.com/v1/chat/completions")!
-        let payload = buildOpenAIPayload(request)
+        _ = URL(string: "https://api.openai.com/v1/chat/completions")!
+        _ = buildOpenAIPayload(request)
         
         // TODO: Implement OpenAI API call
         throw LLMServiceError.notImplemented
     }
     
     private func processWithAnthropic(_ request: LLMRequest) async throws -> LLMResponse {
-        let url = URL(string: "https://api.anthropic.com/v1/messages")!
-        let payload = buildAnthropicPayload(request)
-        
-        // TODO: Implement Anthropic API call
-        throw LLMServiceError.notImplemented
+        // This method is now deprecated - use processWithClaude instead
+        return try await processWithClaude(request.userInput)
     }
     
     private func processWithLocalModel(_ request: LLMRequest) async throws -> LLMResponse {
@@ -113,8 +128,11 @@ class LLMService {
         if let context = request.context {
             prompt += "\nCurrent context:\n"
             prompt += "Running apps: \(context.runningApps.joined(separator: ", "))\n"
-            prompt += "Visible windows: \(context.visibleWindows.joined(separator: ", "))\n"
-            prompt += "Screen resolution: \(Int(context.screenResolution.width))x\(Int(context.screenResolution.height))\n"
+            let windowDescriptions = context.visibleWindows.map { "\($0.appName): \($0.title)" }
+            prompt += "Visible windows: \(windowDescriptions.joined(separator: ", "))\n"
+            if let firstScreen = context.screenResolutions.first {
+                prompt += "Screen resolution: \(Int(firstScreen.width))x\(Int(firstScreen.height))\n"
+            }
         }
         
         return prompt
@@ -126,8 +144,10 @@ class LLMService {
         return LLMContext(
             runningApps: [],
             visibleWindows: [],
-            screenResolution: .zero,
-            currentWorkspace: nil
+            screenResolutions: [CGSize.zero],
+            currentWorkspace: nil,
+            displayCount: 1,
+            userPreferences: nil
         )
     }
     
@@ -144,14 +164,15 @@ class LLMService {
     
     // MARK: - Validation
     func validateConfiguration() -> Bool {
-        switch preferences.llmProvider {
-        case .openAI:
-            return !preferences.openAIAPIKey.isEmpty
-        case .anthropic:
-            return !preferences.anthropicAPIKey.isEmpty
-        case .local:
-            return true // TODO: Check if local model is available
-        }
+        return claudeService != nil
+    }
+    
+    func updateAPIKey(_ apiKey: String) {
+        claudeService = ClaudeLLMService(apiKey: apiKey)
+    }
+    
+    func isConfigured() -> Bool {
+        return claudeService != nil
     }
 }
 

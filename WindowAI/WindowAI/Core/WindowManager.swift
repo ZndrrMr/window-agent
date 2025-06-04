@@ -11,87 +11,272 @@ struct WindowInfo {
 class WindowManager {
     
     init() {
-        checkAccessibilityPermissions()
+        _ = checkAccessibilityPermissions()
     }
     
     // MARK: - Permission Management
     func checkAccessibilityPermissions() -> Bool {
-        // TODO: Check if app has accessibility permissions
-        return false
+        return AXIsProcessTrusted()
     }
     
     func requestAccessibilityPermissions() {
-        // TODO: Prompt user to grant accessibility permissions
+        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true]
+        AXIsProcessTrustedWithOptions(options as CFDictionary)
     }
     
     // MARK: - Window Discovery
     func getAllWindows() -> [WindowInfo] {
-        // TODO: Get all visible windows using Accessibility API
-        return []
+        guard checkAccessibilityPermissions() else { return [] }
+        
+        var windows: [WindowInfo] = []
+        let runningApps = NSWorkspace.shared.runningApplications
+        
+        for app in runningApps {
+            if let bundleIdentifier = app.bundleIdentifier,
+               !bundleIdentifier.contains("com.apple.dock"),
+               !bundleIdentifier.contains("com.apple.systemuiserver") {
+                windows.append(contentsOf: getWindowsForApp(pid: app.processIdentifier))
+            }
+        }
+        
+        return windows
     }
     
     func getWindowsForApp(named appName: String) -> [WindowInfo] {
-        // TODO: Get windows for specific application
-        return []
+        guard let app = NSWorkspace.shared.runningApplications.first(where: { 
+            $0.localizedName?.lowercased() == appName.lowercased() 
+        }) else {
+            return []
+        }
+        
+        return getWindowsForApp(pid: app.processIdentifier)
+    }
+    
+    private func getWindowsForApp(pid: pid_t) -> [WindowInfo] {
+        guard checkAccessibilityPermissions() else { return [] }
+        
+        let appRef = AXUIElementCreateApplication(pid)
+        var windowsRef: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(appRef, kAXWindowsAttribute as CFString, &windowsRef)
+        
+        guard result == .success,
+              let windows = windowsRef as? [AXUIElement] else {
+            return []
+        }
+        
+        var windowInfos: [WindowInfo] = []
+        
+        for window in windows {
+            if let windowInfo = createWindowInfo(from: window, appPID: pid) {
+                windowInfos.append(windowInfo)
+            }
+        }
+        
+        return windowInfos
+    }
+    
+    private func createWindowInfo(from window: AXUIElement, appPID: pid_t) -> WindowInfo? {
+        var titleRef: CFTypeRef?
+        var positionRef: CFTypeRef?
+        var sizeRef: CFTypeRef?
+        
+        // Get window title
+        AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &titleRef)
+        let title = titleRef as? String ?? "Untitled"
+        
+        // Get window position
+        AXUIElementCopyAttributeValue(window, kAXPositionAttribute as CFString, &positionRef)
+        var position = CGPoint.zero
+        if let positionValue = positionRef {
+            AXValueGetValue(positionValue as! AXValue, .cgPoint, &position)
+        }
+        
+        // Get window size
+        AXUIElementCopyAttributeValue(window, kAXSizeAttribute as CFString, &sizeRef)
+        var size = CGSize.zero
+        if let sizeValue = sizeRef {
+            AXValueGetValue(sizeValue as! AXValue, .cgSize, &size)
+        }
+        
+        // Get app name
+        let appName = NSRunningApplication(processIdentifier: appPID)?.localizedName ?? "Unknown App"
+        
+        let bounds = CGRect(origin: position, size: size)
+        return WindowInfo(title: title, appName: appName, bounds: bounds, windowRef: window)
     }
     
     func getFrontmostWindow() -> WindowInfo? {
-        // TODO: Get the currently focused window
-        return nil
+        guard let frontmostApp = NSWorkspace.shared.frontmostApplication else {
+            return nil
+        }
+        
+        let windows = getWindowsForApp(pid: frontmostApp.processIdentifier)
+        return windows.first // Usually the first window is the frontmost
     }
     
     // MARK: - Window Manipulation
     func moveWindow(_ windowInfo: WindowInfo, to position: CGPoint) -> Bool {
-        // TODO: Move window to specified position
-        return false
+        guard checkAccessibilityPermissions() else { return false }
+        
+        let positionValue = AXValueCreate(.cgPoint, withUnsafePointer(to: position) { $0 })
+        let result = AXUIElementSetAttributeValue(windowInfo.windowRef, kAXPositionAttribute as CFString, positionValue!)
+        return result == .success
     }
     
     func resizeWindow(_ windowInfo: WindowInfo, to size: CGSize) -> Bool {
-        // TODO: Resize window to specified size
-        return false
+        guard checkAccessibilityPermissions() else { return false }
+        
+        // Validate size against app constraints
+        let bundleID = getBundleID(for: windowInfo.appName) ?? ""
+        let validatedSize = AppConstraintsManager.shared.validateWindowSize(size, for: bundleID)
+        
+        let sizeValue = AXValueCreate(.cgSize, withUnsafePointer(to: validatedSize) { $0 })
+        let result = AXUIElementSetAttributeValue(windowInfo.windowRef, kAXSizeAttribute as CFString, sizeValue!)
+        return result == .success
     }
     
     func setWindowBounds(_ windowInfo: WindowInfo, bounds: CGRect) -> Bool {
-        // TODO: Set window position and size in one operation
-        return false
+        guard checkAccessibilityPermissions() else { return false }
+        
+        // Validate bounds against app constraints and screen bounds
+        let validatedBounds = validateWindowBounds(bounds, for: windowInfo.appName)
+        
+        let positionValue = AXValueCreate(.cgPoint, withUnsafePointer(to: validatedBounds.origin) { $0 })
+        let sizeValue = AXValueCreate(.cgSize, withUnsafePointer(to: validatedBounds.size) { $0 })
+        
+        let positionResult = AXUIElementSetAttributeValue(windowInfo.windowRef, kAXPositionAttribute as CFString, positionValue!)
+        let sizeResult = AXUIElementSetAttributeValue(windowInfo.windowRef, kAXSizeAttribute as CFString, sizeValue!)
+        
+        return positionResult == .success && sizeResult == .success
     }
     
     func focusWindow(_ windowInfo: WindowInfo) -> Bool {
-        // TODO: Bring window to front and focus it
-        return false
+        guard checkAccessibilityPermissions() else { return false }
+        
+        // First make the window the main window
+        let mainResult = AXUIElementSetAttributeValue(windowInfo.windowRef, kAXMainAttribute as CFString, kCFBooleanTrue)
+        
+        // Then raise the window
+        let raiseResult = AXUIElementPerformAction(windowInfo.windowRef, kAXRaiseAction as CFString)
+        
+        // Also bring the app to front
+        if let app = NSRunningApplication.runningApplications(withBundleIdentifier: getBundleID(for: windowInfo.appName) ?? "").first {
+            app.activate()
+        }
+        
+        return mainResult == .success && raiseResult == .success
     }
     
     func minimizeWindow(_ windowInfo: WindowInfo) -> Bool {
-        // TODO: Minimize the window
-        return false
+        guard checkAccessibilityPermissions() else { return false }
+        
+        let result = AXUIElementSetAttributeValue(windowInfo.windowRef, kAXMinimizedAttribute as CFString, kCFBooleanTrue)
+        return result == .success
     }
     
     func maximizeWindow(_ windowInfo: WindowInfo) -> Bool {
-        // TODO: Maximize the window
-        return false
+        guard checkAccessibilityPermissions() else { return false }
+        
+        // Get screen bounds for the display this window is on
+        let screenBounds = getScreenBounds(for: windowInfo.bounds.origin)
+        
+        // Apply some padding for menu bar and dock
+        let menuBarHeight: CGFloat = 25
+        let dockHeight: CGFloat = 80
+        let padding: CGFloat = 10
+        
+        let maxBounds = CGRect(
+            x: screenBounds.origin.x + padding,
+            y: screenBounds.origin.y + menuBarHeight,
+            width: screenBounds.width - (padding * 2),
+            height: screenBounds.height - menuBarHeight - dockHeight - padding
+        )
+        
+        return setWindowBounds(windowInfo, bounds: maxBounds)
     }
     
     // MARK: - Screen Information
     func getScreenBounds() -> CGRect {
-        // TODO: Get main screen bounds
-        return .zero
+        guard let mainScreen = NSScreen.main else {
+            return .zero
+        }
+        return mainScreen.frame
     }
     
     func getAllScreenBounds() -> [CGRect] {
-        // TODO: Get bounds for all connected displays
-        return []
+        return NSScreen.screens.map { $0.frame }
+    }
+    
+    func getScreenBounds(for point: CGPoint) -> CGRect {
+        // Find which screen contains this point
+        for screen in NSScreen.screens {
+            if screen.frame.contains(point) {
+                return screen.frame
+            }
+        }
+        // Default to main screen if point not found
+        return getScreenBounds()
+    }
+    
+    func getVisibleScreenBounds(for point: CGPoint) -> CGRect {
+        // Get screen bounds minus menu bar and dock
+        for screen in NSScreen.screens {
+            if screen.frame.contains(point) {
+                return screen.visibleFrame
+            }
+        }
+        return NSScreen.main?.visibleFrame ?? .zero
     }
 }
 
 // MARK: - Helper Extensions
 extension WindowManager {
     func getWindowAtPosition(_ position: CGPoint) -> WindowInfo? {
-        // TODO: Find window at specific screen position
+        let allWindows = getAllWindows()
+        
+        // Find the topmost window at this position
+        for window in allWindows {
+            if window.bounds.contains(position) {
+                return window
+            }
+        }
+        
         return nil
     }
     
     func isWindowVisible(_ windowInfo: WindowInfo) -> Bool {
-        // TODO: Check if window is currently visible
-        return false
+        guard checkAccessibilityPermissions() else { return false }
+        
+        var isMinimized: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(windowInfo.windowRef, kAXMinimizedAttribute as CFString, &isMinimized)
+        
+        if result == .success, let minimized = isMinimized as? Bool {
+            return !minimized
+        }
+        
+        return true // Assume visible if we can't determine
+    }
+    
+    private func getBundleID(for appName: String) -> String? {
+        return NSWorkspace.shared.runningApplications.first {
+            $0.localizedName?.lowercased() == appName.lowercased()
+        }?.bundleIdentifier
+    }
+    
+    private func validateWindowBounds(_ bounds: CGRect, for appName: String) -> CGRect {
+        let bundleID = getBundleID(for: appName) ?? ""
+        let validatedSize = AppConstraintsManager.shared.validateWindowSize(bounds.size, for: bundleID)
+        
+        // Ensure window stays within screen bounds
+        let screenBounds = getVisibleScreenBounds(for: bounds.origin)
+        
+        var validatedBounds = bounds
+        validatedBounds.size = validatedSize
+        
+        // Clamp position to screen bounds
+        validatedBounds.origin.x = max(screenBounds.minX, min(screenBounds.maxX - validatedBounds.width, validatedBounds.origin.x))
+        validatedBounds.origin.y = max(screenBounds.minY, min(screenBounds.maxY - validatedBounds.height, validatedBounds.origin.y))
+        
+        return validatedBounds
     }
 }
