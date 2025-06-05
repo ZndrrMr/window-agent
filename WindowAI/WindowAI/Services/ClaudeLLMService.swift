@@ -97,6 +97,8 @@ class ClaudeLLMService {
     
     // MARK: - Public API
     func processCommand(_ userInput: String, context: LLMContext? = nil) async throws -> [WindowCommand] {
+        print("\n🤖 USER COMMAND: \"\(userInput)\"")
+        
         let systemPrompt = buildSystemPrompt(context: context)
         let userMessage = ClaudeMessage(role: "user", content: [ClaudeContent(text: userInput)])
         
@@ -221,17 +223,13 @@ class ClaudeLLMService {
             let requestData = try encoder.encode(request)
             urlRequest.httpBody = requestData
             
-            // Debug: Print the request JSON
-            if let jsonString = String(data: requestData, encoding: .utf8) {
-                print("🔍 Claude API Request JSON:")
-                print(jsonString)
-                
-                // Also test just the tools array
-                let toolsData = try JSONEncoder().encode(WindowManagementTools.allTools)
-                if let toolsString = String(data: toolsData, encoding: .utf8) {
-                    print("🔧 Tools array JSON:")
-                    print(toolsString)
-                }
+            // Debug: Print only user message
+            if let jsonObj = try? JSONSerialization.jsonObject(with: requestData) as? [String: Any],
+               let messages = jsonObj["messages"] as? [[String: Any]],
+               let firstMessage = messages.first,
+               let content = firstMessage["content"] as? [[String: Any]],
+               let textContent = content.first?["text"] as? String {
+                // User input already printed above
             }
             
             let (data, response) = try await urlSession.data(for: urlRequest)
@@ -263,11 +261,22 @@ class ClaudeLLMService {
     private func parseCommandsFromResponse(_ response: ClaudeResponse) throws -> [WindowCommand] {
         var commands: [WindowCommand] = []
         
+        print("\n📋 CLAUDE'S TOOL CALLS:")
+        
         for content in response.content {
             if content.type == "tool_use",
                let id = content.id,
                let name = content.name,
                let input = content.input {
+                
+                // Print the tool call
+                var inputStr = "("
+                for (key, value) in input {
+                    if inputStr.count > 1 { inputStr += ", " }
+                    inputStr += "\(key): \"\(value.value)\""
+                }
+                inputStr += ")"
+                print("  → \(name)\(inputStr)")
                 
                 let toolUse = LLMToolUse(id: id, name: name, input: input)
                 
@@ -281,8 +290,10 @@ class ClaudeLLMService {
             // If no tool calls were made, extract any text response
             let textResponses = response.content.compactMap { $0.text }.joined(separator: " ")
             if !textResponses.isEmpty {
+                print("  ❌ No tool calls, just text: \(textResponses)")
                 throw ClaudeLLMError.noToolsUsed(textResponses)
             } else {
+                print("  ❌ No commands generated")
                 throw ClaudeLLMError.noCommandsGenerated
             }
         }

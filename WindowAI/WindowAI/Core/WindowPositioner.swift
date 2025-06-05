@@ -172,7 +172,10 @@ class WindowPositioner {
     }
     
     private func snapWindow(_ command: WindowCommand) -> CommandResult {
+        print("\n🎯 SNAPPING: \(command.target)")
+        
         guard let windows = getTargetWindows(command.target), let window = windows.first else {
+            print("  ❌ Could not find window")
             return CommandResult(success: false, message: "Could not find window for '\(command.target)'", command: command)
         }
         
@@ -185,8 +188,18 @@ class WindowPositioner {
         let size = calculateSize(sizeType, for: window.appName, on: displayIndex)
         let calculatedPosition = calculatePosition(position, size: size, on: displayIndex)
         
+        print("  📐 Position: \(position.rawValue), Size: \(sizeType.rawValue)")
+        print("  📏 Calculated bounds: \(calculatedPosition) size: \(size)")
+        
         let bounds = CGRect(origin: calculatedPosition, size: size)
         let success = windowManager.setWindowBounds(window, bounds: bounds)
+        
+        if success {
+            print("  ✅ Successfully snapped \(command.target)")
+        } else {
+            print("  ❌ Failed to snap \(command.target)")
+        }
+        
         let message = success ? "Snapped \(command.target) to \(position.rawValue)" : "Failed to snap \(command.target)"
         
         return CommandResult(success: success, message: message, command: command)
@@ -226,33 +239,44 @@ class WindowPositioner {
     }
     
     private func openApp(_ command: WindowCommand) -> CommandResult {
+        print("\n🚀 OPENING: \(command.target)")
+        
         // This will be handled by AppLauncher, but we can set initial position/size
         let bundleID = getBundleID(for: command.target)
         
         if let bundleID = bundleID {
+            print("  📦 Found bundle ID: \(bundleID)")
             let success = NSWorkspace.shared.launchApplication(withBundleIdentifier: bundleID, 
                                                              options: [], 
                                                              additionalEventParamDescriptor: nil, 
                                                              launchIdentifier: nil)
             
-            if success && (command.position != nil || command.size != nil) {
-                // Wait a moment for the app to launch, then position it
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                    if let window = self.windowManager.getWindowsForApp(named: command.target).first {
-                        if let position = command.position, let size = command.size {
-                            let displayIndex = command.display ?? 0
-                            let calculatedSize = self.calculateSize(size, for: command.target, on: displayIndex)
-                            let calculatedPosition = self.calculatePosition(position, size: calculatedSize, on: displayIndex)
-                            let bounds = CGRect(origin: calculatedPosition, size: calculatedSize)
-                            _ = self.windowManager.setWindowBounds(window, bounds: bounds)
+            if success {
+                print("  ✅ App launched successfully")
+                if (command.position != nil || command.size != nil) {
+                    print("  ⏳ Waiting to position window...")
+                    // Wait a moment for the app to launch, then position it
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        if let window = self.windowManager.getWindowsForApp(named: command.target).first {
+                            if let position = command.position, let size = command.size {
+                                let displayIndex = command.display ?? 0
+                                let calculatedSize = self.calculateSize(size, for: command.target, on: displayIndex)
+                                let calculatedPosition = self.calculatePosition(position, size: calculatedSize, on: displayIndex)
+                                let bounds = CGRect(origin: calculatedPosition, size: calculatedSize)
+                                let result = self.windowManager.setWindowBounds(window, bounds: bounds)
+                                print("  📍 Positioned window: \(result ? "✅" : "❌")")
+                            }
                         }
                     }
                 }
+            } else {
+                print("  ❌ Failed to launch app")
             }
             
             let message = success ? "Opened \(command.target)" : "Failed to open \(command.target)"
             return CommandResult(success: success, message: message, command: command)
         } else {
+            print("  ❌ Could not find bundle ID for '\(command.target)'")
             return CommandResult(success: false, message: "Could not find app '\(command.target)'", command: command)
         }
     }
@@ -482,6 +506,7 @@ class WindowPositioner {
     
     // Specific workspace arrangements
     private func arrangeCodingWorkspace() -> CommandResult {
+        print("\n🖥️ ARRANGING CODING WORKSPACE")
         let workspace = Workspace(
             name: "Coding",
             category: .coding,

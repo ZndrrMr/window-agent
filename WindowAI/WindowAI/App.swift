@@ -204,6 +204,8 @@ class WindowAIController: HotkeyManagerDelegate, LLMServiceDelegate {
                     self.commandWindow.showSuccess("Commands executed successfully")
                     self.isProcessingCommand = false
                     
+                    print("\n✨ DONE! All commands executed.\n")
+                    
                     // Auto-hide after delay
                     DispatchQueue.main.asyncAfter(deadline: .now() + self.preferences.autoHideDelay) {
                         self.hideCommandWindow()
@@ -302,25 +304,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // FORCE the accessibility prompt to appear
+        // Check accessibility permissions
         if !AXIsProcessTrusted() {
-            print("🚨 App needs accessibility permissions!")
-            
-            // Method 1: Official API
             let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary
             let trusted = AXIsProcessTrustedWithOptions(options)
-            print("Prompt triggered, trusted: \(trusted)")
             
-            // Method 2: If that didn't work, try accessing system elements
             if !trusted {
                 DispatchQueue.main.async {
-                    // This WILL trigger the prompt
+                    // This will trigger the prompt if needed
                     let systemWide = AXUIElementCreateSystemWide()
                     var value: CFTypeRef?
                     let _ = AXUIElementCopyAttributeValue(systemWide, kAXFocusedApplicationAttribute as CFString, &value)
                 }
             }
         }
+        
+        print("\n🚀 WindowAI Started!\n")
         
         windowAIController = WindowAIController()
         setupMenuBar()
