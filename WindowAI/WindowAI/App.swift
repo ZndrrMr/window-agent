@@ -56,10 +56,13 @@ class WindowAIController: HotkeyManagerDelegate, LLMServiceDelegate {
         // Setup hotkey manager
         hotkeyManager.delegate = self
         if preferences.hotkeyEnabled {
-            _ = hotkeyManager.registerHotkey(
+            let success = hotkeyManager.registerHotkey(
                 keyCode: preferences.hotkeyKeyCode,
                 modifiers: preferences.hotkeyModifiers
             )
+            print("🔥 Hotkey registration: \(success ? "SUCCESS" : "FAILED") - KeyCode: \(preferences.hotkeyKeyCode), Modifiers: \(preferences.hotkeyModifiers)")
+        } else {
+            print("⚠️ Hotkey disabled in preferences")
         }
         
         // Setup LLM service
@@ -237,6 +240,7 @@ class WindowAIController: HotkeyManagerDelegate, LLMServiceDelegate {
 // MARK: - HotkeyManagerDelegate
 extension WindowAIController {
     func hotkeyPressed() {
+        print("🔥 Hotkey pressed! Window visible: \(commandWindow.isVisible)")
         if commandWindow.isVisible {
             hideCommandWindow()
         } else {

@@ -8,7 +8,7 @@ class UserPreferences: ObservableObject {
     // MARK: - Hotkey Settings
     @Published var hotkeyEnabled: Bool = true
     @Published var hotkeyKeyCode: UInt32 = 49 // Space
-    @Published var hotkeyModifiers: UInt32 = 1048576 // Cmd
+    @Published var hotkeyModifiers: UInt32 = 1179648 // Cmd + Shift (1048576 + 131072)
     
     // MARK: - LLM Settings
     @Published var llmProvider: LLMProvider = .openAI
