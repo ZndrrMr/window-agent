@@ -133,6 +133,21 @@ class WindowAIController: HotkeyManagerDelegate, LLMServiceDelegate {
             showOnboarding()
         }
     }
+    
+    func updateHotkey() {
+        hotkeyManager.unregisterHotkey()
+        if preferences.hotkeyEnabled {
+            let success = hotkeyManager.registerHotkey(
+                keyCode: preferences.hotkeyKeyCode,
+                modifiers: preferences.hotkeyModifiers
+            )
+            print("🔥 Hotkey update: \(success ? "SUCCESS" : "FAILED") - KeyCode: \(preferences.hotkeyKeyCode), Modifiers: \(preferences.hotkeyModifiers)")
+        }
+    }
+    
+    func unregisterHotkey() {
+        hotkeyManager.unregisterHotkey()
+    }
     func testLLMIntegration() {
           Task {
               let tester = LLMTestInterface()
@@ -283,7 +298,7 @@ struct Main {
 
 // MARK: - Custom App Delegate
 class AppDelegate: NSObject, NSApplicationDelegate {
-    private var windowAIController: WindowAIController?
+    var windowAIController: WindowAIController?
     private var statusItem: NSStatusItem?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
