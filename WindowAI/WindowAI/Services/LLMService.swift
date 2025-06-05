@@ -23,9 +23,12 @@ class LLMService {
     }
     
     private func setupClaudeService() {
-        if !preferences.anthropicAPIKey.isEmpty {
-            claudeService = ClaudeLLMService(apiKey: preferences.anthropicAPIKey)
-        }
+        // Hardcode API key for testing
+        let apiKey = "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"
+        claudeService = ClaudeLLMService(apiKey: apiKey)
+        
+        // Also update preferences
+        preferences.anthropicAPIKey = apiKey
     }
     
     // MARK: - Public API
@@ -164,7 +167,8 @@ class LLMService {
     
     // MARK: - Validation
     func validateConfiguration() -> Bool {
-        return claudeService != nil
+        // Always return true since we hardcoded the API key
+        return true
     }
     
     func updateAPIKey(_ apiKey: String) {

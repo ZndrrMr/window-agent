@@ -14,8 +14,25 @@ class CommandExecutor {
     
     // MARK: - Command Execution
     func executeCommands(_ commands: [WindowCommand]) async -> [CommandResult] {
-        // TODO: Execute array of commands and return results
-        return []
+        var results: [CommandResult] = []
+        
+        for command in commands {
+            // Add a small delay between commands to ensure they execute properly
+            if !results.isEmpty {
+                try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
+            }
+            
+            let result = await executeCommand(command)
+            results.append(result)
+            
+            // If a command fails and it's critical (like opening an app), stop execution
+            if !result.success && (command.action == .open || command.action == .focus) {
+                print("⚠️ Critical command failed, stopping execution: \(result.message)")
+                break
+            }
+        }
+        
+        return results
     }
     
     func executeCommand(_ command: WindowCommand) async -> CommandResult {

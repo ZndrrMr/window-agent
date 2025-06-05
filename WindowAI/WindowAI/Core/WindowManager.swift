@@ -237,6 +237,61 @@ class WindowManager {
         return setWindowBounds(windowInfo, bounds: maxBounds)
     }
     
+    func closeWindow(_ windowInfo: WindowInfo) -> Bool {
+        guard checkAccessibilityPermissions() else { return false }
+        
+        // Try to close the window using the close button action
+        let closeResult = AXUIElementPerformAction(windowInfo.windowRef, kAXPressAction as CFString)
+        
+        if closeResult != .success {
+            // If that fails, try to close via the close button subelement
+            var closeButtonRef: CFTypeRef?
+            let buttonResult = AXUIElementCopyAttributeValue(windowInfo.windowRef, kAXCloseButtonAttribute as CFString, &closeButtonRef)
+            
+            if buttonResult == .success, let closeButton = closeButtonRef as! AXUIElement? {
+                let pressResult = AXUIElementPerformAction(closeButton, kAXPressAction as CFString)
+                return pressResult == .success
+            }
+        }
+        
+        return closeResult == .success
+    }
+    
+    func quitApp(_ appName: String) -> Bool {
+        guard checkAccessibilityPermissions() else { return false }
+        
+        // Find the app and quit it
+        if let app = NSRunningApplication.runningApplications(withBundleIdentifier: getBundleID(for: appName) ?? "").first {
+            return app.terminate()
+        }
+        
+        // Try by localized name if bundle ID didn't work
+        if let app = NSWorkspace.shared.runningApplications.first(where: { 
+            $0.localizedName?.lowercased() == appName.lowercased() 
+        }) {
+            return app.terminate()
+        }
+        
+        return false
+    }
+    
+    func restoreWindow(_ windowInfo: WindowInfo) -> Bool {
+        guard checkAccessibilityPermissions() else { return false }
+        
+        // Check if window is minimized
+        var isMinimized: CFTypeRef?
+        let minResult = AXUIElementCopyAttributeValue(windowInfo.windowRef, kAXMinimizedAttribute as CFString, &isMinimized)
+        
+        if minResult == .success, let minimized = isMinimized as? Bool, minimized {
+            // Unminimize the window
+            let result = AXUIElementSetAttributeValue(windowInfo.windowRef, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
+            return result == .success
+        }
+        
+        // If not minimized, bring it to front
+        return focusWindow(windowInfo)
+    }
+    
     // MARK: - Screen Information
     func getScreenBounds() -> CGRect {
         guard let mainScreen = NSScreen.main else {
