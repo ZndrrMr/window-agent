@@ -179,8 +179,23 @@ class ClaudeLLMService {
         urlRequest.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         
         do {
-            let requestData = try JSONEncoder().encode(request)
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = .prettyPrinted
+            let requestData = try encoder.encode(request)
             urlRequest.httpBody = requestData
+            
+            // Debug: Print the request JSON
+            if let jsonString = String(data: requestData, encoding: .utf8) {
+                print("🔍 Claude API Request JSON:")
+                print(jsonString)
+                
+                // Also test just the tools array
+                let toolsData = try JSONEncoder().encode(WindowManagementTools.allTools)
+                if let toolsString = String(data: toolsData, encoding: .utf8) {
+                    print("🔧 Tools array JSON:")
+                    print(toolsString)
+                }
+            }
             
             let (data, response) = try await urlSession.data(for: urlRequest)
             

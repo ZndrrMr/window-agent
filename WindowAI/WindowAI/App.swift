@@ -5,7 +5,7 @@ class WindowAIController: HotkeyManagerDelegate, LLMServiceDelegate {
     
     // MARK: - Core Components
     private let hotkeyManager = HotkeyManager()
-    private let windowManager = WindowManager()
+    private let windowManager = WindowManager.shared
     private let appLauncher = AppLauncher()
     private lazy var llmService = LLMService(windowManager: windowManager)
     private let subscriptionService = SubscriptionService()
@@ -283,8 +283,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Check and request necessary permissions
-        checkPermissions()
+        // FORCE the accessibility prompt to appear
+        if !AXIsProcessTrusted() {
+            print("🚨 App needs accessibility permissions!")
+            
+            // Method 1: Official API
+            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary
+            let trusted = AXIsProcessTrustedWithOptions(options)
+            print("Prompt triggered, trusted: \(trusted)")
+            
+            // Method 2: If that didn't work, try accessing system elements
+            if !trusted {
+                DispatchQueue.main.async {
+                    // This WILL trigger the prompt
+                    let systemWide = AXUIElementCreateSystemWide()
+                    var value: CFTypeRef?
+                    let _ = AXUIElementCopyAttributeValue(systemWide, kAXFocusedApplicationAttribute as CFString, &value)
+                }
+            }
+        }
         
         windowAIController = WindowAIController()
         setupMenuBar()
@@ -343,6 +360,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem(title: "Show Command Window", action: #selector(showCommandWindow), keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Test LLM Integration", action: #selector(testLLMIntegration), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Test Window Movement", action: #selector(testWindowMovement), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Run Accessibility Diagnostics", action: #selector(runAccessibilityDiagnostics), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Test Direct Accessibility", action: #selector(testDirectAccessibility), keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Settings...", action: #selector(showSettings), keyEquivalent: ","))
         menu.addItem(NSMenuItem(title: "About WindowAI", action: #selector(showAbout), keyEquivalent: ""))
@@ -367,5 +387,55 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     @objc private func testLLMIntegration() {
         windowAIController?.testLLMIntegration()
+    }
+    
+    @objc private func testWindowMovement() {
+        Task {
+            let tester = AccessibilityTestInterface()
+            tester.runAllTests()
+        }
+    }
+    
+    @objc private func runAccessibilityDiagnostics() {
+        print("\n🔍 === ACCESSIBILITY DIAGNOSTICS === 🔍")
+        print("📅 Date: \(Date())")
+        print("🖥️  Process: \(ProcessInfo.processInfo.processName)")
+        print("📱 Bundle ID: \(Bundle.main.bundleIdentifier ?? "Unknown")")
+        print("🔢 PID: \(ProcessInfo.processInfo.processIdentifier)")
+        
+        // Check permissions multiple ways
+        print("\n📋 Permission Checks:")
+        print("1️⃣  AXIsProcessTrusted: \(AXIsProcessTrusted())")
+        print("2️⃣  PermissionManager.hasAccessibilityPermissions: \(PermissionManager.hasAccessibilityPermissions())")
+        print("3️⃣  WindowManager.checkAccessibilityPermissions: \(WindowManager.shared.checkAccessibilityPermissions())")
+        
+        // Try to get system-wide element
+        print("\n🌐 System-wide Element Test:")
+        let systemWide = AXUIElementCreateSystemWide()
+        var focusedAppRef: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(systemWide, kAXFocusedApplicationAttribute as CFString, &focusedAppRef)
+        print("   Getting focused app: \(result == .success ? "✅ Success" : "❌ Failed - Error \(result.rawValue)")")
+        
+        // List all windows
+        print("\n🪟 Window Discovery:")
+        let windows = WindowManager.shared.getAllWindows()
+        print("   Found \(windows.count) windows")
+        for (index, window) in windows.enumerated() {
+            print("   \(index + 1). \(window.appName): '\(window.title)' at \(window.bounds.origin)")
+        }
+        
+        // Check if we're in Privacy & Security list
+        print("\n🔐 Privacy & Security Check:")
+        print("   To verify: System Settings > Privacy & Security > Accessibility")
+        print("   Look for: WindowAI (com.zandermodaress.WindowAI)")
+        print("   If running from Xcode, also look for: Xcode")
+        
+        print("\n✅ Diagnostics complete!")
+        print("=====================================\n")
+    }
+    
+    @objc private func testDirectAccessibility() {
+        print("\n🧪 Running Direct Accessibility Test...")
+        DirectAccessibilityTest.runDetailedTest()
     }
 }

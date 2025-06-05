@@ -10,7 +10,7 @@ class LLMTestInterface {
     private var claudeService: ClaudeLLMService?
     
     init() {
-        self.windowManager = WindowManager()
+        self.windowManager = WindowManager.shared
         self.appLauncher = AppLauncher()
         self.commandExecutor = CommandExecutor(windowManager: windowManager, appLauncher: appLauncher)
     }
@@ -38,6 +38,7 @@ class LLMTestInterface {
         
         do {
             print("🤖 Sending to Claude Sonnet 4...")
+            print("🔍 First tool schema:", WindowManagementTools.allTools.first?.input_schema ?? "No tools")
             let commands = try await claude.processCommand(userInput, context: context)
             
             print("✨ Received \(commands.count) command(s):")

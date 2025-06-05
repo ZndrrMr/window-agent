@@ -9,36 +9,53 @@ struct WindowInfo {
 }
 
 class WindowManager {
+    static let shared = WindowManager()
     
-    init() {
+    private init() {
         _ = checkAccessibilityPermissions()
     }
     
     // MARK: - Permission Management
     func checkAccessibilityPermissions() -> Bool {
-        return AXIsProcessTrusted()
+        let isTrusted = AXIsProcessTrusted()
+        print("🔐 WindowManager: Accessibility trusted = \(isTrusted)")
+        print("🔐 Process info: \(ProcessInfo.processInfo.processName) - PID: \(ProcessInfo.processInfo.processIdentifier)")
+        return isTrusted
     }
     
     func requestAccessibilityPermissions() {
+        print("🔐 WindowManager: Requesting accessibility permissions...")
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true]
-        AXIsProcessTrustedWithOptions(options as CFDictionary)
+        let result = AXIsProcessTrustedWithOptions(options as CFDictionary)
+        print("🔐 WindowManager: Request result = \(result)")
     }
     
     // MARK: - Window Discovery
     func getAllWindows() -> [WindowInfo] {
-        guard checkAccessibilityPermissions() else { return [] }
+        guard checkAccessibilityPermissions() else { 
+            print("❌ WindowManager: Cannot get windows - no accessibility permissions")
+            return [] 
+        }
         
+        print("🔍 WindowManager: Getting all windows...")
         var windows: [WindowInfo] = []
         let runningApps = NSWorkspace.shared.runningApplications
+        print("🔍 Found \(runningApps.count) total running applications")
         
+        var appCount = 0
         for app in runningApps {
             if let bundleIdentifier = app.bundleIdentifier,
                !bundleIdentifier.contains("com.apple.dock"),
                !bundleIdentifier.contains("com.apple.systemuiserver") {
-                windows.append(contentsOf: getWindowsForApp(pid: app.processIdentifier))
+                appCount += 1
+                print("🔍 Processing app: \(app.localizedName ?? "Unknown") [\(bundleIdentifier)]")
+                let appWindows = getWindowsForApp(pid: app.processIdentifier)
+                print("   Found \(appWindows.count) windows")
+                windows.append(contentsOf: appWindows)
             }
         }
         
+        print("🔍 Total: Processed \(appCount) apps, found \(windows.count) windows")
         return windows
     }
     
@@ -53,22 +70,36 @@ class WindowManager {
     }
     
     private func getWindowsForApp(pid: pid_t) -> [WindowInfo] {
-        guard checkAccessibilityPermissions() else { return [] }
+        guard checkAccessibilityPermissions() else { 
+            print("❌ getWindowsForApp: No accessibility permissions for PID \(pid)")
+            return [] 
+        }
         
+        print("🪟 getWindowsForApp: Creating AXUIElement for PID \(pid)")
         let appRef = AXUIElementCreateApplication(pid)
         var windowsRef: CFTypeRef?
         let result = AXUIElementCopyAttributeValue(appRef, kAXWindowsAttribute as CFString, &windowsRef)
         
-        guard result == .success,
-              let windows = windowsRef as? [AXUIElement] else {
+        if result != .success {
+            print("❌ getWindowsForApp: Failed to get windows - Error: \(result.rawValue)")
             return []
         }
         
+        guard let windows = windowsRef as? [AXUIElement] else {
+            print("❌ getWindowsForApp: No windows found or wrong type")
+            return []
+        }
+        
+        print("🪟 getWindowsForApp: Found \(windows.count) windows for PID \(pid)")
         var windowInfos: [WindowInfo] = []
         
-        for window in windows {
+        for (index, window) in windows.enumerated() {
+            print("   Processing window \(index + 1)...")
             if let windowInfo = createWindowInfo(from: window, appPID: pid) {
                 windowInfos.append(windowInfo)
+                print("   ✅ Created WindowInfo: \(windowInfo.title)")
+            } else {
+                print("   ❌ Failed to create WindowInfo")
             }
         }
         
@@ -116,10 +147,21 @@ class WindowManager {
     
     // MARK: - Window Manipulation
     func moveWindow(_ windowInfo: WindowInfo, to position: CGPoint) -> Bool {
-        guard checkAccessibilityPermissions() else { return false }
+        guard checkAccessibilityPermissions() else { 
+            print("❌ moveWindow: No accessibility permissions")
+            return false 
+        }
         
+        print("🚀 moveWindow: Moving '\(windowInfo.title)' to position \(position)")
         let positionValue = AXValueCreate(.cgPoint, withUnsafePointer(to: position) { $0 })
         let result = AXUIElementSetAttributeValue(windowInfo.windowRef, kAXPositionAttribute as CFString, positionValue!)
+        
+        if result == .success {
+            print("✅ moveWindow: Successfully moved window")
+        } else {
+            print("❌ moveWindow: Failed with error code: \(result.rawValue)")
+        }
+        
         return result == .success
     }
     
