@@ -7,7 +7,6 @@ class WindowPositioner {
     
     private let windowManager: WindowManager
     private let constraintsManager = AppConstraintsManager.shared
-    private let intelligentLayout = IntelligentLayoutEngine.shared
     
     init(windowManager: WindowManager) {
         self.windowManager = windowManager
@@ -92,12 +91,20 @@ class WindowPositioner {
         switch sizeType {
         case .tiny:
             calculatedSize = CGSize(width: visibleBounds.width * 0.25, height: visibleBounds.height * 0.25)
-        case .small, .quarter, .third:
+        case .small:
             calculatedSize = CGSize(width: visibleBounds.width * 0.33, height: visibleBounds.height * 0.5)
+        case .quarter:
+            calculatedSize = CGSize(width: visibleBounds.width * 0.25, height: visibleBounds.height * 0.25)
+        case .third:
+            // Third width, full height - perfect for terminal/auxiliary apps
+            calculatedSize = CGSize(width: visibleBounds.width * 0.33, height: visibleBounds.height)
         case .medium, .half:
             calculatedSize = CGSize(width: visibleBounds.width * 0.5, height: visibleBounds.height * 0.7)
-        case .large, .twoThirds:
+        case .large:
             calculatedSize = CGSize(width: visibleBounds.width * 0.67, height: visibleBounds.height * 0.8)
+        case .twoThirds:
+            // Two-thirds width, full height - perfect for primary apps like code editors
+            calculatedSize = CGSize(width: visibleBounds.width * 0.67, height: visibleBounds.height)
         case .threeQuarters:
             calculatedSize = CGSize(width: visibleBounds.width * 0.75, height: visibleBounds.height * 0.85)
         case .huge:
@@ -358,35 +365,6 @@ class WindowPositioner {
     }
     
     private func arrangeLeftRightLayout(workspace: Workspace, screenBounds: CGRect, gap: CGFloat, results: inout [String]) {
-        // Use intelligent layout for better positioning
-        let allApps = workspace.requiredApps + workspace.optionalApps.filter { windowManager.getWindowsForApp(named: $0.appName).count > 0 }
-        
-        // Get all windows for intelligent arrangement
-        var windows: [WindowInfo] = []
-        for appContext in allApps {
-            if let window = windowManager.getWindowsForApp(named: appContext.appName).first {
-                windows.append(window)
-            }
-        }
-        
-        // Let the intelligent layout engine arrange the windows
-        let arrangements = intelligentLayout.arrangeWindows(windows, in: screenBounds)
-        
-        // Apply the arrangements
-        for arrangement in arrangements {
-            if windowManager.setWindowBounds(arrangement.window, bounds: arrangement.targetBounds) {
-                let roleDescription = arrangement.role == .primary ? "primary focus" : arrangement.role.rawValue
-                results.append("Positioned \(arrangement.window.appName) as \(roleDescription) at \(arrangement.targetBounds.origin)")
-            }
-        }
-        
-        // If intelligent layout didn't work or no arrangements, fall back to simple split
-        if arrangements.isEmpty && windows.count > 0 {
-            fallbackLeftRightLayout(windows: windows, screenBounds: screenBounds, gap: gap, results: &results)
-        }
-    }
-    
-    private func fallbackLeftRightLayout(windows: [WindowInfo], screenBounds: CGRect, gap: CGFloat, results: inout [String]) {
         let halfWidth = (screenBounds.width - gap) / 2
         let height = screenBounds.height
         
@@ -394,17 +372,23 @@ class WindowPositioner {
         let rightX = screenBounds.origin.x + halfWidth + gap
         let y = screenBounds.origin.y
         
-        for (index, window) in windows.enumerated() {
-            let isLeftSide = index % 2 == 0
-            let bounds = CGRect(
-                x: isLeftSide ? leftX : rightX,
-                y: y,
-                width: halfWidth,
-                height: height
-            )
-            
-            if windowManager.setWindowBounds(window, bounds: bounds) {
-                results.append("Positioned \(window.appName) on \(isLeftSide ? "left" : "right")")
+        var appIndex = 0
+        let allApps = workspace.requiredApps + workspace.optionalApps.filter { windowManager.getWindowsForApp(named: $0.appName).count > 0 }
+        
+        for appContext in allApps {
+            if let window = windowManager.getWindowsForApp(named: appContext.appName).first {
+                let isLeftSide = appIndex % 2 == 0
+                let bounds = CGRect(
+                    x: isLeftSide ? leftX : rightX,
+                    y: y,
+                    width: halfWidth,
+                    height: height
+                )
+                
+                if windowManager.setWindowBounds(window, bounds: bounds) {
+                    results.append("Positioned \(appContext.appName) on \(isLeftSide ? "left" : "right")")
+                }
+                appIndex += 1
             }
         }
     }
@@ -592,31 +576,18 @@ class WindowPositioner {
                 results.append("Maximized \(windows[0].appName)")
             }
         case 2:
-            // Two windows - use intelligent layout for optimal positioning
-            let arrangements = intelligentLayout.arrangeWindows(windows, in: screenBounds)
+            // Two windows - side by side
+            let halfWidth = (screenBounds.width - gap) / 2
+            let leftBounds = CGRect(x: screenBounds.origin.x, y: screenBounds.origin.y, 
+                                  width: halfWidth, height: screenBounds.height)
+            let rightBounds = CGRect(x: screenBounds.origin.x + halfWidth + gap, y: screenBounds.origin.y,
+                                   width: halfWidth, height: screenBounds.height)
             
-            if !arrangements.isEmpty {
-                // Apply intelligent arrangements
-                for arrangement in arrangements {
-                    if windowManager.setWindowBounds(arrangement.window, bounds: arrangement.targetBounds) {
-                        let roleDesc = arrangement.role == .primary ? "primary" : "auxiliary"
-                        results.append("Positioned \(arrangement.window.appName) as \(roleDesc)")
-                    }
-                }
-            } else {
-                // Fallback to simple side-by-side
-                let halfWidth = (screenBounds.width - gap) / 2
-                let leftBounds = CGRect(x: screenBounds.origin.x, y: screenBounds.origin.y, 
-                                      width: halfWidth, height: screenBounds.height)
-                let rightBounds = CGRect(x: screenBounds.origin.x + halfWidth + gap, y: screenBounds.origin.y,
-                                       width: halfWidth, height: screenBounds.height)
-                
-                if windowManager.setWindowBounds(windows[0], bounds: leftBounds) {
-                    results.append("Tiled \(windows[0].appName) to left")
-                }
-                if windowManager.setWindowBounds(windows[1], bounds: rightBounds) {
-                    results.append("Tiled \(windows[1].appName) to right")
-                }
+            if windowManager.setWindowBounds(windows[0], bounds: leftBounds) {
+                results.append("Tiled \(windows[0].appName) to left")
+            }
+            if windowManager.setWindowBounds(windows[1], bounds: rightBounds) {
+                results.append("Tiled \(windows[1].appName) to right")
             }
         case 3:
             // Three windows - one left, two right stacked

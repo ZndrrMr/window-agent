@@ -134,8 +134,42 @@ class ClaudeLLMService {
         6. Default to "optimal" size unless user specifies otherwise
         7. Use multiple tool calls for complex requests (e.g., "open Safari and Terminal side by side")
         
+        INTELLIGENT WINDOW LAYOUT PRINCIPLES:
+        
+        1. TERMINAL WINDOWS:
+           - Default: Position on the right side, taking up 1/3 of the screen width
+           - Terminals benefit from vertical space more than horizontal space
+           - Most terminal content (logs, code output) flows vertically
+           - Width of 80-100 characters is usually sufficient
+           - Example: snap_window with position "right" and size "third"
+        
+        2. CODE EDITORS (Cursor, VS Code, Xcode):
+           - Default: Primary focus window, taking up left 2/3 of screen
+           - Need more horizontal space for code + file explorer
+           - When paired with terminal, use snap_window with position "left" and size "two_thirds"
+        
+        3. COMMUNICATION APPS (Messages, Slack, Discord):
+           - Default: Right side auxiliary window, narrow layout
+           - Can be partially visible - user just needs to see new messages
+           - Use smaller widths (1/3 or 1/4 of screen)
+        
+        4. BROWSERS:
+           - Default: Primary focus window for most tasks
+           - For development docs: Can share space with code editor
+           - Flexible sizing based on content
+        
+        5. CONTEXT-AWARE ARRANGEMENTS:
+           - "I want to code": Code editor (left 2/3) + Terminal (right 1/3)
+           - "Research mode": Browser (primary) + Notes (right auxiliary)
+           - "Communication": Messages/Slack (right 1/3) + main work app (left 2/3)
+        
+        REMEMBER: These are DEFAULT behaviors. Users can override by being specific:
+        - "Put terminal on the left taking half the screen" - honor this exactly
+        - "I prefer my terminal full screen" - remember this preference
+        - Always respect explicit user instructions over defaults
+        
         CONTEXT MEANINGS:
-        - "coding": Development environment (IDE, terminal, browser for docs)
+        - "coding": Development environment (IDE + terminal in smart layout)
         - "writing": Focused writing (text editor, minimal distractions)
         - "research": Information gathering (browser, notes, references)
         - "communication": Messages, email, video calls
@@ -144,6 +178,9 @@ class ClaudeLLMService {
         - "presentation": Large windows, clean layout
         - "cleanup": Organize all windows neatly
         """
+        
+        // Add user-specific preferences if any exist
+        prompt += UserLayoutPreferences.shared.generatePreferenceString()
         
         if let context = context {
             prompt += "\n\nCURRENT SYSTEM STATE:\n"
