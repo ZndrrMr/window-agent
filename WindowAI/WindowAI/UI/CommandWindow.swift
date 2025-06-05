@@ -16,6 +16,11 @@ class CommandWindow: NSWindow {
         setupConstraints()
     }
     
+    // Override to allow borderless window to become key
+    override var canBecomeKey: Bool {
+        return true
+    }
+    
     // MARK: - Window Setup
     private func setupWindow() {
         self.level = .floating
@@ -105,13 +110,23 @@ class CommandWindow: NSWindow {
     
     // MARK: - Public Methods
     func showWindow() {
+        // Make sure the app is active
+        NSApp.activate(ignoringOtherApps: true)
+        
+        // Make window key and order front
         makeKeyAndOrderFront(nil)
-        commandTextField.becomeFirstResponder()
+        self.makeKey()
         
         // Animate in
-        NSAnimationContext.runAnimationGroup { context in
+        NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.2
             self.animator().alphaValue = 1.0
+        }) {
+            // Focus the text field after animation completes
+            DispatchQueue.main.async {
+                self.commandTextField.window?.makeFirstResponder(self.commandTextField)
+                self.commandTextField.selectText(nil)
+            }
         }
     }
     
