@@ -223,19 +223,26 @@ class AppConstraintsManager {
             AppConstraints(bundleID: "com.todesktop.230313mzl4w4u92", appName: "Cursor", 
                           minWidth: 600, minHeight: 400, category: .codeEditor),
             
-            // Communication
+            // Communication - prefer narrow for auxiliary use
             AppConstraints(bundleID: "com.apple.MobileSMS", appName: "Messages", 
-                          minWidth: 320, minHeight: 400, maxWidth: 800, category: .communication),
+                          minWidth: 320, minHeight: 400, maxWidth: 600,
+                          prefersFixedAspectRatio: true, aspectRatio: 0.7,
+                          category: .communication, notes: "Messages works well as narrow auxiliary window"),
             AppConstraints(bundleID: "com.tinyspeck.slackmacgap", appName: "Slack", 
-                          minWidth: 400, minHeight: 300, category: .communication),
+                          minWidth: 400, minHeight: 300, maxWidth: 800,
+                          category: .communication),
             AppConstraints(bundleID: "com.hnc.Discord", appName: "Discord", 
                           minWidth: 940, minHeight: 500, category: .communication),
             
-            // Terminal Apps
+            // Terminal Apps - prefer tall and narrow
             AppConstraints(bundleID: "com.apple.Terminal", appName: "Terminal", 
-                          minWidth: 480, minHeight: 300, category: .terminal),
+                          minWidth: 480, minHeight: 300, maxWidth: 800,
+                          prefersFixedAspectRatio: true, aspectRatio: 0.6,
+                          category: .terminal, notes: "Terminal prefers tall/narrow layout"),
             AppConstraints(bundleID: "com.googlecode.iterm2", appName: "iTerm2", 
-                          minWidth: 480, minHeight: 300, category: .terminal),
+                          minWidth: 480, minHeight: 300, maxWidth: 800,
+                          prefersFixedAspectRatio: true, aspectRatio: 0.6,
+                          category: .terminal, notes: "iTerm2 prefers tall/narrow layout"),
             
             // Design Apps
             AppConstraints(bundleID: "com.figma.Desktop", appName: "Figma", 
