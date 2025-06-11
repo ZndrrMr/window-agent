@@ -47,7 +47,7 @@ class WindowAIController: HotkeyManagerDelegate, LLMServiceDelegate {
     private func setupComponents() {
         // Setup command window
         commandWindow = CommandWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 500, height: 90),
+            contentRect: NSRect(x: 0, y: 0, width: 720, height: 88),
             styleMask: [],
             backing: .buffered,
             defer: false
@@ -94,11 +94,24 @@ class WindowAIController: HotkeyManagerDelegate, LLMServiceDelegate {
     // MARK: - Public Methods
     func showCommandWindow() {
         guard !isProcessingCommand else { return }
+        
+        // Ensure only one command window exists
+        hideAllOtherCommandWindows()
+        
         commandWindow.showWindow()
     }
     
     func hideCommandWindow() {
         commandWindow.hideWindow()
+    }
+    
+    private func hideAllOtherCommandWindows() {
+        // Close any other windows that might be command windows
+        for window in NSApp.windows {
+            if window != commandWindow && window.className.contains("Command") {
+                window.close()
+            }
+        }
     }
     
     func showSettings() {
@@ -256,11 +269,7 @@ class WindowAIController: HotkeyManagerDelegate, LLMServiceDelegate {
 extension WindowAIController {
     func hotkeyPressed() {
         print("🔥 Hotkey pressed! Window visible: \(commandWindow.isVisible)")
-        if commandWindow.isVisible {
-            hideCommandWindow()
-        } else {
-            showCommandWindow()
-        }
+        commandWindow.toggleWindow()
     }
 }
 
@@ -355,7 +364,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func applicationWillTerminate(_ notification: Notification) {
+        // Clean up command window before terminating
+        windowAIController?.hideCommandWindow()
+        windowAIController?.unregisterHotkey()
+        
+        // Save preferences
         UserPreferences.shared.savePreferences()
+        
+        // Give the system a moment to clean up
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            // Force close all windows
+            for window in NSApp.windows {
+                window.close()
+            }
+        }
     }
     
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
