@@ -397,11 +397,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         menu.addItem(NSMenuItem(title: "Show Command Window", action: #selector(showCommandWindow), keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "Test LLM Integration", action: #selector(testLLMIntegration), keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "Test Window Movement", action: #selector(testWindowMovement), keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "Run Accessibility Diagnostics", action: #selector(runAccessibilityDiagnostics), keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "Test Direct Accessibility", action: #selector(testDirectAccessibility), keyEquivalent: ""))
-        menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Settings...", action: #selector(showSettings), keyEquivalent: ","))
         menu.addItem(NSMenuItem(title: "About WindowAI", action: #selector(showAbout), keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
@@ -423,79 +418,4 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.orderFrontStandardAboutPanel(nil)
     }
     
-    @objc private func testLLMIntegration() {
-        windowAIController?.testLLMIntegration()
-    }
-    
-    @objc private func testWindowMovement() {
-        Task {
-            let tester = AccessibilityTestInterface()
-            tester.runAllTests()
-        }
-    }
-    
-    @objc private func runAccessibilityDiagnostics() {
-        let diagnosticOutput = """
-        
-        🔍 === ACCESSIBILITY DIAGNOSTICS === 🔍
-        📅 Date: \(Date())
-        🖥️  Process: \(ProcessInfo.processInfo.processName)
-        📱 Bundle ID: \(Bundle.main.bundleIdentifier ?? "Unknown")
-        🔢 PID: \(ProcessInfo.processInfo.processIdentifier)
-        
-        📋 Permission Checks:
-        1️⃣  AXIsProcessTrusted: \(AXIsProcessTrusted())
-        2️⃣  PermissionManager.hasAccessibilityPermissions: \(PermissionManager.hasAccessibilityPermissions())
-        3️⃣  WindowManager.checkAccessibilityPermissions: \(WindowManager.shared.checkAccessibilityPermissions())
-        
-        🌐 System-wide Element Test:
-        """
-        
-        print(diagnosticOutput)
-        
-        // Write to file for debugging
-        let logPath = "/tmp/windowai_diagnostics.log"
-        try? diagnosticOutput.write(toFile: logPath, atomically: true, encoding: .utf8)
-        
-        let systemWide = AXUIElementCreateSystemWide()
-        var focusedAppRef: CFTypeRef?
-        let result = AXUIElementCopyAttributeValue(systemWide, kAXFocusedApplicationAttribute as CFString, &focusedAppRef)
-        let focusedAppResult = "   Getting focused app: \(result == .success ? "✅ Success" : "❌ Failed - Error \(result.rawValue)")"
-        print(focusedAppResult)
-        try? (diagnosticOutput + "\n" + focusedAppResult).write(toFile: logPath, atomically: true, encoding: .utf8)
-        
-        // List all windows
-        var windowOutput = "\n🪟 Window Discovery:\n"
-        let windows = WindowManager.shared.getAllWindows()
-        windowOutput += "   Found \(windows.count) windows\n"
-        for (index, window) in windows.enumerated() {
-            windowOutput += "   \(index + 1). \(window.appName): '\(window.title)' at \(window.bounds.origin)\n"
-        }
-        
-        windowOutput += """
-        
-        🔐 Privacy & Security Check:
-           To verify: System Settings > Privacy & Security > Accessibility
-           Look for: WindowAI (com.zandermodaress.WindowAI)
-           If running from Xcode, also look for: Xcode
-        
-        ✅ Diagnostics complete!
-        =====================================
-        
-        """
-        
-        print(windowOutput)
-        try? (diagnosticOutput + "\n" + focusedAppResult + "\n" + windowOutput).write(toFile: logPath, atomically: true, encoding: .utf8)
-        
-        // Also show a notification
-        let notification = NSUserNotification()
-        notification.title = "WindowAI Diagnostics"
-        notification.informativeText = "Diagnostics complete. Output saved to \(logPath)"
-        NSUserNotificationCenter.default.deliver(notification)
-    }
-    
-    @objc private func testDirectAccessibility() {
-        print("\n🧪 Running Direct Accessibility Test...")
-        DirectAccessibilityTest.runDetailedTest()
-    }
 }
