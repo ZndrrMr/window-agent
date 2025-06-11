@@ -10,6 +10,10 @@ class CommandWindow: NSWindow {
     private var blurView: NSVisualEffectView!
     private var globalMonitor: Any?
     
+    // Autocomplete system
+    private var autocompleteWindow: AutocompleteWindow!
+    private var isShowingAutocomplete = false
+    
     // Animation properties
     private var showTimer: Timer?
     private var hideTimer: Timer?
@@ -135,6 +139,10 @@ class CommandWindow: NSWindow {
         highlightLayer.cornerCurve = .continuous
         blurView.layer?.addSublayer(highlightLayer)
         
+        // Create autocomplete window
+        autocompleteWindow = AutocompleteWindow()
+        autocompleteWindow.dropdownDelegate = self
+        
         // Add to container (suggestion label hidden)
         containerView.addSubview(commandTextField)
         containerView.addSubview(loadingIndicator)
@@ -243,6 +251,9 @@ class CommandWindow: NSWindow {
         showTimer?.invalidate()
         showTimer = nil
         
+        // Hide autocomplete
+        autocompleteWindow.hideDropdown()
+        
         // Beautiful fade out animation
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.25
@@ -285,6 +296,7 @@ class CommandWindow: NSWindow {
     
     private func clearInput() {
         commandTextField.stringValue = ""
+        autocompleteWindow.hideDropdown()
         resetSuggestionText()
     }
     
@@ -404,10 +416,51 @@ extension CommandWindow: NSTextFieldDelegate {
         
         let text = textField.stringValue
         if text.isEmpty {
-            resetSuggestionText()
+            autocompleteWindow.hideDropdown()
         } else {
-            updateSuggestions(for: text)
+            updateAutocomplete(for: text)
         }
+    }
+    
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        // Handle Tab key specifically for autocomplete
+        if commandSelector == #selector(NSStandardKeyBindingResponding.insertTab(_:)) && isShowingAutocomplete {
+            print("🔥 Tab key intercepted in text field!")
+            if let suggestion = autocompleteWindow.getSelectedSuggestion() {
+                print("🎯 Selected suggestion: \(suggestion.name)")
+                completeWithSuggestion(suggestion)
+                return true // Consume the event
+            }
+        }
+        
+        return false // Let the text view handle other commands
+    }
+    
+    private func updateAutocomplete(for text: String) {
+        // Check if we should show autocomplete (look for app names)
+        let words = text.split(separator: " ")
+        guard let lastWord = words.last,
+              lastWord.count >= 2 else {
+            autocompleteWindow.hideDropdown()
+            return
+        }
+        
+        let query = String(lastWord)
+        print("🔍 Autocomplete query: '\(query)'")
+        let suggestions = AppAutocomplete.shared.getSuggestions(for: query)
+        print("📱 Found \(suggestions.count) suggestions: \(suggestions.map { $0.name })")
+        
+        if suggestions.isEmpty {
+            autocompleteWindow.hideDropdown()
+        } else {
+            showAutocomplete(with: suggestions)
+        }
+    }
+    
+    private func showAutocomplete(with suggestions: [AppSuggestion]) {
+        print("💬 Showing autocomplete with \(suggestions.count) suggestions")
+        autocompleteWindow.showWithSuggestions(suggestions, below: self)
+        isShowingAutocomplete = true
     }
     
     private func updateSuggestions(for text: String) {
@@ -415,18 +468,94 @@ extension CommandWindow: NSTextFieldDelegate {
     }
 }
 
+// MARK: - AutocompleteDropdownDelegate
+extension CommandWindow: AutocompleteDropdownDelegate {
+    func autocompleteDropdown(_ dropdown: AutocompleteDropdown, didSelect suggestion: AppSuggestion) {
+        completeWithSuggestion(suggestion)
+    }
+    
+    private func completeWithSuggestion(_ suggestion: AppSuggestion) {
+        print("💫 Completing with suggestion: \(suggestion.name)")
+        let currentText = commandTextField.stringValue
+        let words = currentText.split(separator: " ").map(String.init)
+        
+        if !words.isEmpty {
+            // Replace the last word with the app name
+            var newWords = Array(words.dropLast())
+            newWords.append(suggestion.name)
+            commandTextField.stringValue = newWords.joined(separator: " ") + " "
+        } else {
+            commandTextField.stringValue = suggestion.name + " "
+        }
+        
+        print("📝 New text field value: '\(commandTextField.stringValue)'")
+        
+        // Position cursor at end
+        DispatchQueue.main.async {
+            if let editor = self.commandTextField.currentEditor() as? NSTextView {
+                let length = self.commandTextField.stringValue.count
+                editor.setSelectedRange(NSRange(location: length, length: 0))
+                print("🎯 Cursor positioned at: \(length)")
+            }
+        }
+        
+        autocompleteWindow.hideDropdown()
+        isShowingAutocomplete = false
+        print("✅ Autocomplete hidden")
+    }
+}
+
 // MARK: - Key Handling
 extension CommandWindow {
     override func keyDown(with event: NSEvent) {
+        // Handle autocomplete navigation
+        if isShowingAutocomplete {
+            switch event.keyCode {
+            case 48: // Tab key
+                print("🔥 Tab key pressed - showing autocomplete: \(isShowingAutocomplete)")
+                if let suggestion = autocompleteWindow.getSelectedSuggestion() {
+                    print("🎯 Selected suggestion: \(suggestion.name)")
+                    completeWithSuggestion(suggestion)
+                } else {
+                    print("❌ No selected suggestion found")
+                }
+                return
+            case 125: // Down arrow
+                autocompleteWindow.selectNext()
+                return
+            case 126: // Up arrow
+                autocompleteWindow.selectPrevious()
+                return
+            case 53: // Escape key
+                autocompleteWindow.hideDropdown()
+                isShowingAutocomplete = false
+                return
+            default:
+                break
+            }
+        }
+        
+        // Standard key handling
         if event.keyCode == 53 { // Escape key
-            hideWindow()
+            if isShowingAutocomplete {
+                autocompleteWindow.hideDropdown()
+                isShowingAutocomplete = false
+            } else {
+                hideWindow()
+            }
             return
         }
+        
         super.keyDown(with: event)
     }
     
     // Ensure escape key is handled even when text field has focus
     override func cancelOperation(_ sender: Any?) {
-        hideWindow()
+        if isShowingAutocomplete {
+            autocompleteWindow.hideDropdown()
+            isShowingAutocomplete = false
+        } else {
+            hideWindow()
+        }
     }
 }

@@ -269,7 +269,17 @@ class WindowAIController: HotkeyManagerDelegate, LLMServiceDelegate {
 extension WindowAIController {
     func hotkeyPressed() {
         print("🔥 Hotkey pressed! Window visible: \(commandWindow.isVisible)")
-        commandWindow.toggleWindow()
+        
+        // Prevent multiple rapid hotkey presses
+        DispatchQueue.main.async {
+            if self.commandWindow.isVisible && self.commandWindow.alphaValue > 0 {
+                self.commandWindow.hideWindow()
+            } else {
+                // Ensure only one window
+                self.hideAllOtherCommandWindows()
+                self.commandWindow.showWindow()
+            }
+        }
     }
 }
 
