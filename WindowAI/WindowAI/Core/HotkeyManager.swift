@@ -55,7 +55,7 @@ class HotkeyManager {
                                        &hotKeyRef)
         
         if status == noErr {
-            print("✅ HotkeyManager: Successfully registered hotkey (keyCode: \(keyCode), modifiers: \(carbonModifiers))")
+            print("✅ Hotkey registered: ⌘+⇧+Space")
             return true
         } else {
             print("❌ HotkeyManager: Failed to register hotkey. Error: \(status)")
@@ -67,9 +67,7 @@ class HotkeyManager {
         guard let hotKey = hotKeyRef else { return }
         
         let status = UnregisterEventHotKey(hotKey)
-        if status == noErr {
-            print("✅ HotkeyManager: Unregistered hotkey")
-        } else {
+        if status != noErr {
             print("❌ HotkeyManager: Failed to unregister hotkey. Error: \(status)")
         }
         hotKeyRef = nil
@@ -88,9 +86,7 @@ class HotkeyManager {
                                        nil,
                                        &eventHandler)
         
-        if status == noErr {
-            print("✅ HotkeyManager: Event handler installed")
-        } else {
+        if status != noErr {
             print("❌ HotkeyManager: Failed to install event handler. Error: \(status)")
         }
     }

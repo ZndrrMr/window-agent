@@ -293,7 +293,7 @@ class AppConstraintsManager {
             self.userDefinedConstraints = decoded
         } catch {
             // File doesn't exist or can't be decoded, start with empty constraints
-            print("Could not load user constraints: \(error)")
+            // This is normal for first run, no need to log
         }
     }
     

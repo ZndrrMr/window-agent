@@ -56,11 +56,10 @@ class WindowAIController: HotkeyManagerDelegate, LLMServiceDelegate {
         // Setup hotkey manager
         hotkeyManager.delegate = self
         if preferences.hotkeyEnabled {
-            let success = hotkeyManager.registerHotkey(
+            hotkeyManager.registerHotkey(
                 keyCode: preferences.hotkeyKeyCode,
                 modifiers: preferences.hotkeyModifiers
             )
-            print("🔥 Hotkey registration: \(success ? "SUCCESS" : "FAILED") - KeyCode: \(preferences.hotkeyKeyCode), Modifiers: \(preferences.hotkeyModifiers)")
         } else {
             print("⚠️ Hotkey disabled in preferences")
         }
@@ -137,11 +136,10 @@ class WindowAIController: HotkeyManagerDelegate, LLMServiceDelegate {
     func updateHotkey() {
         hotkeyManager.unregisterHotkey()
         if preferences.hotkeyEnabled {
-            let success = hotkeyManager.registerHotkey(
+            hotkeyManager.registerHotkey(
                 keyCode: preferences.hotkeyKeyCode,
                 modifiers: preferences.hotkeyModifiers
             )
-            print("🔥 Hotkey update: \(success ? "SUCCESS" : "FAILED") - KeyCode: \(preferences.hotkeyKeyCode), Modifiers: \(preferences.hotkeyModifiers)")
         }
     }
     

@@ -1,5 +1,6 @@
 import Foundation
 import CoreGraphics
+import Cocoa
 
 // MARK: - LLM Tool Definitions
 struct LLMTool: Codable {
@@ -8,7 +9,7 @@ struct LLMTool: Codable {
     let input_schema: ToolInputSchema
     
     struct ToolInputSchema: Codable {
-        let type: String = "object"
+        var type: String = "object"
         let properties: [String: PropertyDefinition]
         let required: [String]
         
@@ -28,7 +29,7 @@ struct LLMTool: Codable {
 
 // MARK: - Tool Use Response
 struct LLMToolUse: Codable {
-    let type: String = "tool_use"
+    var type: String = "tool_use"
     let id: String
     let name: String
     let input: [String: AnyCodable]
@@ -91,7 +92,9 @@ class WindowManagementTools {
         arrangeWorkspaceTool,
         snapWindowTool,
         minimizeWindowTool,
-        maximizeWindowTool
+        maximizeWindowTool,
+        cascadeWindowsTool,
+        tileWindowsTool
     ]
     
     // Move window to specific position
@@ -121,7 +124,7 @@ class WindowManagementTools {
     // Resize window to specific size
     static let resizeWindowTool = LLMTool(
         name: "resize_window",
-        description: "Resize a window to a specific size",
+        description: "Resize a window to a specific size. Can resize just height or width independently.",
         input_schema: LLMTool.ToolInputSchema(
             properties: [
                 "app_name": LLMTool.ToolInputSchema.PropertyDefinition(
@@ -130,8 +133,24 @@ class WindowManagementTools {
                 ),
                 "size": LLMTool.ToolInputSchema.PropertyDefinition(
                     type: "string",
-                    description: "Size to resize the window to",
-                    options: ["tiny", "small", "medium", "large", "huge", "half", "quarter", "third", "two-thirds", "three-quarters", "full", "optimal"]
+                    description: "Size to resize the window to. Use 'custom' if specifying custom_height or custom_width",
+                    options: ["tiny", "small", "medium", "large", "huge", "half", "quarter", "third", "two-thirds", "three-quarters", "full", "optimal", "custom"]
+                ),
+                "custom_height": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "string",
+                    description: "Custom height as percentage of screen (e.g., '90' for 90% height). Only used when size='custom'"
+                ),
+                "custom_width": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "string",
+                    description: "Custom width as percentage of screen (e.g., '50' for 50% width). Only used when size='custom'"
+                ),
+                "preserve_width": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "boolean",
+                    description: "If true, keep current width and only change height"
+                ),
+                "preserve_height": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "boolean",
+                    description: "If true, keep current height and only change width"
                 )
             ],
             required: ["app_name", "size"]
@@ -267,6 +286,50 @@ class WindowManagementTools {
             required: ["app_name"]
         )
     )
+    
+    // Cascade windows
+    static let cascadeWindowsTool = LLMTool(
+        name: "cascade_windows",
+        description: "Arrange windows in a cascade layout with intelligent overlapping for better visibility",
+        input_schema: LLMTool.ToolInputSchema(
+            properties: [
+                "target": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "string",
+                    description: "Which windows to cascade: 'all', 'visible', or specific app name"
+                ),
+                "style": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "string",
+                    description: "Cascade style to use",
+                    options: ["intelligent", "classic", "compact", "spread"]
+                ),
+                "focus_mode": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "boolean",
+                    description: "Whether to optimize for focused work (larger primary window)"
+                )
+            ],
+            required: ["target"]
+        )
+    )
+    
+    // Tile windows
+    static let tileWindowsTool = LLMTool(
+        name: "tile_windows",
+        description: "Tile windows to show all windows without overlap",
+        input_schema: LLMTool.ToolInputSchema(
+            properties: [
+                "target": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "string",
+                    description: "Which windows to tile: 'all', 'visible', or specific app name"
+                ),
+                "layout": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "string",
+                    description: "Tiling layout to use",
+                    options: ["grid", "horizontal", "vertical", "primary-left"]
+                )
+            ],
+            required: ["target"]
+        )
+    )
 }
 
 // MARK: - Tool to Command Converter
@@ -298,6 +361,10 @@ class ToolToCommandConverter {
             return convertMinimizeWindow(input)
         case "maximize_window":
             return convertMaximizeWindow(input)
+        case "cascade_windows":
+            return convertCascadeWindows(input)
+        case "tile_windows":
+            return convertTileWindows(input)
         default:
             return nil
         }
@@ -322,15 +389,55 @@ class ToolToCommandConverter {
     
     private static func convertResizeWindow(_ input: [String: Any]) -> WindowCommand? {
         guard let appName = input["app_name"] as? String,
-              let sizeStr = input["size"] as? String,
-              let size = WindowSize(rawValue: sizeStr) else {
+              let sizeStr = input["size"] as? String else {
             return nil
+        }
+        
+        let size = WindowSize(rawValue: sizeStr)
+        
+        // Handle custom size
+        var customSize: CGSize?
+        var parameters: [String: String] = [:]
+        
+        if sizeStr == "custom" {
+            let screenBounds = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1920, height: 1080)
+            
+            if let heightStr = input["custom_height"] as? String,
+               let heightPercent = Double(heightStr) {
+                let height = screenBounds.height * (heightPercent / 100.0)
+                
+                if let widthStr = input["custom_width"] as? String,
+                   let widthPercent = Double(widthStr) {
+                    let width = screenBounds.width * (widthPercent / 100.0)
+                    customSize = CGSize(width: width, height: height)
+                } else {
+                    // Only height specified, preserve width
+                    parameters["preserve_width"] = "true"
+                    customSize = CGSize(width: 0, height: height) // Width will be preserved
+                }
+            } else if let widthStr = input["custom_width"] as? String,
+                      let widthPercent = Double(widthStr) {
+                // Only width specified, preserve height
+                let width = screenBounds.width * (widthPercent / 100.0)
+                parameters["preserve_height"] = "true"
+                customSize = CGSize(width: width, height: 0) // Height will be preserved
+            }
+        }
+        
+        // Check preserve flags
+        if let preserveWidth = input["preserve_width"] as? Bool, preserveWidth {
+            parameters["preserve_width"] = "true"
+        }
+        if let preserveHeight = input["preserve_height"] as? Bool, preserveHeight {
+            parameters["preserve_height"] = "true"
         }
         
         return WindowCommand(
             action: .resize,
             target: appName,
-            size: size
+            size: size ?? .medium,
+            customSize: customSize,
+            parameters: parameters.isEmpty ? nil : parameters
         )
     }
     
@@ -422,6 +529,43 @@ class ToolToCommandConverter {
             action: .maximize,
             target: appName,
             display: display
+        )
+    }
+    
+    private static func convertCascadeWindows(_ input: [String: Any]) -> WindowCommand? {
+        guard let target = input["target"] as? String else {
+            return nil
+        }
+        
+        var parameters: [String: String] = [:]
+        if let style = input["style"] as? String {
+            parameters["style"] = style
+        }
+        if let focusMode = input["focus_mode"] as? Bool {
+            parameters["focus"] = focusMode ? "true" : "false"
+        }
+        
+        return WindowCommand(
+            action: .stack, // Using stack action for cascade
+            target: target,
+            parameters: parameters
+        )
+    }
+    
+    private static func convertTileWindows(_ input: [String: Any]) -> WindowCommand? {
+        guard let target = input["target"] as? String else {
+            return nil
+        }
+        
+        var parameters: [String: String] = [:]
+        if let layout = input["layout"] as? String {
+            parameters["layout"] = layout
+        }
+        
+        return WindowCommand(
+            action: .tile,
+            target: target,
+            parameters: parameters
         )
     }
 }

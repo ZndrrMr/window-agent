@@ -7,9 +7,11 @@ class WindowPositioner {
     
     private let windowManager: WindowManager
     private let constraintsManager = AppConstraintsManager.shared
+    private let cascadePositioner: CascadePositioner
     
     init(windowManager: WindowManager) {
         self.windowManager = windowManager
+        self.cascadePositioner = CascadePositioner(windowManager: windowManager)
     }
     
     // MARK: - Public API
@@ -36,7 +38,7 @@ class WindowPositioner {
         case .tile:
             return tileWindows(command)
         case .stack:
-            return stackWindows(command)
+            return cascadeWindows(command)
         case .restore:
             return restoreWindow(command)
         }
@@ -157,15 +159,29 @@ class WindowPositioner {
         let displayIndex = command.display ?? 0
         var size: CGSize
         
+        // Get current window size for preserve operations
+        let currentBounds = window.bounds
+        
         if let customSize = command.customSize {
             size = customSize
+            
+            // Handle preserve width/height
+            if let preserveWidth = command.parameters?["preserve_width"], preserveWidth == "true" {
+                size.width = currentBounds.width
+            }
+            if let preserveHeight = command.parameters?["preserve_height"], preserveHeight == "true" {
+                size.height = currentBounds.height
+            }
         } else if let windowSize = command.size {
             size = calculateSize(windowSize, for: window.appName, on: displayIndex)
         } else {
             return CommandResult(success: false, message: "No size specified", command: command)
         }
         
-        let success = windowManager.resizeWindow(window, to: size)
+        // For resize, we keep the current position and just change size
+        let newBounds = CGRect(origin: currentBounds.origin, size: size)
+        let success = windowManager.setWindowBounds(window, bounds: newBounds)
+        
         let message = success ? "Resized \(command.target) to \(size)" : "Failed to resize \(command.target)"
         
         return CommandResult(success: success, message: message, command: command)
@@ -302,6 +318,32 @@ class WindowPositioner {
     }
     
     private func arrangeWorkspace(_ command: WindowCommand) -> CommandResult {
+        // For intelligent cascade arrangements
+        if command.target.lowercased() == "cascade" || command.target.lowercased() == "intelligent" {
+            let allWindows = windowManager.getAllWindows().filter { windowManager.isWindowVisible($0) }
+            
+            let userContext = UserContext(
+                activity: command.parameters?["activity"],
+                focusMode: command.parameters?["focus"] == "true"
+            )
+            
+            let arrangements = cascadePositioner.arrangeIntelligentLayout(
+                windows: allWindows,
+                userIntent: command.target,
+                context: userContext
+            )
+            
+            var results: [String] = []
+            for arrangement in arrangements {
+                if windowManager.setWindowBounds(arrangement.window, bounds: arrangement.targetBounds) {
+                    results.append("Arranged \(arrangement.window.appName)")
+                }
+            }
+            
+            let success = !results.isEmpty
+            return CommandResult(success: success, message: results.joined(separator: ", "), command: command)
+        }
+        
         let workspaceManager = WorkspaceManager.shared
         
         // Try to find a matching workspace
@@ -327,7 +369,11 @@ class WindowPositioner {
     
     private func executeWorkspaceArrangement(_ workspace: Workspace) -> CommandResult {
         var results: [String] = []
-        let errors: [String] = []
+        var errors: [String] = []
+        
+        print("\n📊 WORKSPACE ARRANGEMENT DETAILS:")
+        print("  📋 Required apps: \(workspace.requiredApps.map { $0.appName }.joined(separator: ", "))")
+        print("  📋 Optional apps: \(workspace.optionalApps.map { $0.appName }.joined(separator: ", "))")
         
         // First, handle excluded apps by minimizing them
         for excludedApp in workspace.excludedApps {
@@ -343,8 +389,11 @@ class WindowPositioner {
         let screenBounds = getVisibleDisplayBounds(0)
         
         // Launch required apps if not running
+        print("\n🚀 CHECKING APP STATUS:")
         for appContext in workspace.requiredApps {
-            if windowManager.getWindowsForApp(named: appContext.appName).isEmpty {
+            let windows = windowManager.getWindowsForApp(named: appContext.appName)
+            if windows.isEmpty {
+                print("  🚀 \(appContext.appName) not running - launching...")
                 // App not running, launch it
                 let bundleID = appContext.bundleID
                 if NSWorkspace.shared.launchApplication(withBundleIdentifier: bundleID, 
@@ -352,9 +401,15 @@ class WindowPositioner {
                                                        additionalEventParamDescriptor: nil, 
                                                        launchIdentifier: nil) {
                     results.append("Launched \(appContext.appName)")
+                    print("    ✅ Launched successfully")
                     // Wait a bit for the app to launch
                     Thread.sleep(forTimeInterval: 1.0)
+                } else {
+                    print("    ❌ Failed to launch")
+                    errors.append("Failed to launch \(appContext.appName)")
                 }
+            } else {
+                print("  ✓ \(appContext.appName) already running (\(windows.count) window(s))")
             }
         }
         
@@ -364,31 +419,49 @@ class WindowPositioner {
         
         switch layout.screenDivision {
         case .leftRight:
-            arrangeLeftRightLayout(workspace: workspace, screenBounds: screenBounds, gap: gap, results: &results)
+            print("  🖼️ Using left-right layout")
+            arrangeLeftRightLayout(workspace: workspace, screenBounds: screenBounds, gap: gap, results: &results, errors: &errors)
         case .topBottom:
-            arrangeTopBottomLayout(workspace: workspace, screenBounds: screenBounds, gap: gap, results: &results)
+            print("  🖼️ Using top-bottom layout")
+            arrangeTopBottomLayout(workspace: workspace, screenBounds: screenBounds, gap: gap, results: &results, errors: &errors)
         case .quarters:
-            arrangeQuartersLayout(workspace: workspace, screenBounds: screenBounds, gap: gap, results: &results)
+            print("  🖼️ Using quarters layout")
+            arrangeQuartersLayout(workspace: workspace, screenBounds: screenBounds, gap: gap, results: &results, errors: &errors)
         case .automatic:
             // Choose based on number of apps
             let totalApps = workspace.requiredApps.count + workspace.optionalApps.filter { windowManager.getWindowsForApp(named: $0.appName).count > 0 }.count
+            print("  🖼️ Automatic layout for \(totalApps) apps")
             if totalApps <= 2 {
-                arrangeLeftRightLayout(workspace: workspace, screenBounds: screenBounds, gap: gap, results: &results)
+                print("    → Using left-right layout")
+                arrangeLeftRightLayout(workspace: workspace, screenBounds: screenBounds, gap: gap, results: &results, errors: &errors)
             } else if totalApps <= 4 {
-                arrangeQuartersLayout(workspace: workspace, screenBounds: screenBounds, gap: gap, results: &results)
+                print("    → Using quarters layout")
+                arrangeQuartersLayout(workspace: workspace, screenBounds: screenBounds, gap: gap, results: &results, errors: &errors)
             } else {
-                arrangeTiledLayout(workspace: workspace, screenBounds: screenBounds, gap: gap, results: &results)
+                print("    → Using tiled layout")
+                arrangeTiledLayout(workspace: workspace, screenBounds: screenBounds, gap: gap, results: &results, errors: &errors)
             }
         case .custom:
             results.append("Custom layouts not yet implemented")
         }
         
         let success = errors.isEmpty
-        let message = success ? results.joined(separator: ", ") : errors.joined(separator: ", ")
+        let message: String
+        if success {
+            if results.isEmpty {
+                message = "Workspace arranged successfully"
+            } else {
+                message = results.joined(separator: ", ")
+            }
+            print("\n✅ WORKSPACE ARRANGEMENT COMPLETE")
+        } else {
+            message = errors.joined(separator: ", ")
+            print("\n❌ WORKSPACE ARRANGEMENT FAILED: \(message)")
+        }
         return CommandResult(success: success, message: message)
     }
     
-    private func arrangeLeftRightLayout(workspace: Workspace, screenBounds: CGRect, gap: CGFloat, results: inout [String]) {
+    private func arrangeLeftRightLayout(workspace: Workspace, screenBounds: CGRect, gap: CGFloat, results: inout [String], errors: inout [String]) {
         let halfWidth = (screenBounds.width - gap) / 2
         let height = screenBounds.height
         
@@ -409,15 +482,23 @@ class WindowPositioner {
                     height: height
                 )
                 
+                print("    📍 Positioning \(appContext.appName) to \(isLeftSide ? "left" : "right") half")
+                print("      📐 Bounds: x=\(Int(bounds.origin.x)), y=\(Int(bounds.origin.y)), w=\(Int(bounds.width)), h=\(Int(bounds.height))")
                 if windowManager.setWindowBounds(window, bounds: bounds) {
                     results.append("Positioned \(appContext.appName) on \(isLeftSide ? "left" : "right")")
+                    print("      ✅ Success")
+                } else {
+                    errors.append("Failed to position \(appContext.appName)")
+                    print("      ❌ Failed")
                 }
                 appIndex += 1
+            } else {
+                print("    ⚠️ No window found for \(appContext.appName)")
             }
         }
     }
     
-    private func arrangeTopBottomLayout(workspace: Workspace, screenBounds: CGRect, gap: CGFloat, results: inout [String]) {
+    private func arrangeTopBottomLayout(workspace: Workspace, screenBounds: CGRect, gap: CGFloat, results: inout [String], errors: inout [String]) {
         let width = screenBounds.width
         let halfHeight = (screenBounds.height - gap) / 2
         
@@ -446,7 +527,7 @@ class WindowPositioner {
         }
     }
     
-    private func arrangeQuartersLayout(workspace: Workspace, screenBounds: CGRect, gap: CGFloat, results: inout [String]) {
+    private func arrangeQuartersLayout(workspace: Workspace, screenBounds: CGRect, gap: CGFloat, results: inout [String], errors: inout [String]) {
         let halfWidth = (screenBounds.width - gap) / 2
         let halfHeight = (screenBounds.height - gap) / 2
         
@@ -473,7 +554,7 @@ class WindowPositioner {
         }
     }
     
-    private func arrangeTiledLayout(workspace: Workspace, screenBounds: CGRect, gap: CGFloat, results: inout [String]) {
+    private func arrangeTiledLayout(workspace: Workspace, screenBounds: CGRect, gap: CGFloat, results: inout [String], errors: inout [String]) {
         // For more than 4 apps, use a grid layout
         let allApps = workspace.requiredApps + workspace.optionalApps.filter { windowManager.getWindowsForApp(named: $0.appName).count > 0 }
         let appCount = allApps.count
@@ -507,6 +588,11 @@ class WindowPositioner {
     // Specific workspace arrangements
     private func arrangeCodingWorkspace() -> CommandResult {
         print("\n🖥️ ARRANGING CODING WORKSPACE")
+        print("  📱 Creating workspace with:")
+        print("    - Cursor (code editor)")
+        print("    - Terminal")
+        print("    - Arc (optional browser)")
+        
         let workspace = Workspace(
             name: "Coding",
             category: .coding,
@@ -684,58 +770,58 @@ class WindowPositioner {
         return CommandResult(success: success, message: message, command: command)
     }
     
-    private func stackWindows(_ command: WindowCommand) -> CommandResult {
-        // Stack windows for specific app or all visible windows
+    private func cascadeWindows(_ command: WindowCommand) -> CommandResult {
+        // Cascade windows for specific app or all visible windows
         let windows: [WindowInfo]
         
         if command.target.lowercased() == "all" || command.target.lowercased() == "visible" {
-            // Stack all visible windows
+            // Cascade all visible windows
             windows = windowManager.getAllWindows().filter { windowManager.isWindowVisible($0) }
         } else {
-            // Stack windows for specific app
+            // Cascade windows for specific app
             windows = windowManager.getWindowsForApp(named: command.target)
         }
         
         guard !windows.isEmpty else {
-            return CommandResult(success: false, message: "No windows found to stack", command: command)
+            return CommandResult(success: false, message: "No windows found to cascade", command: command)
         }
         
         let displayIndex = command.display ?? 0
         let screenBounds = getVisibleDisplayBounds(displayIndex)
         
-        // Calculate cascade offset
-        let cascadeOffset: CGFloat = 30.0
-        let maxCascadeSteps = min(windows.count, 10) // Limit cascade to avoid going off screen
+        // Create user context based on command parameters
+        let userContext = UserContext(
+            activity: command.parameters?["activity"],
+            focusMode: command.parameters?["focus"] == "true"
+        )
         
-        // Calculate initial window size (80% of screen)
-        let windowWidth = screenBounds.width * 0.6
-        let windowHeight = screenBounds.height * 0.7
-        
-        // Calculate starting position to center the cascade
-        let totalCascadeWidth = CGFloat(maxCascadeSteps - 1) * cascadeOffset
-        let totalCascadeHeight = CGFloat(maxCascadeSteps - 1) * cascadeOffset
-        let startX = screenBounds.origin.x + (screenBounds.width - windowWidth - totalCascadeWidth) / 2
-        let startY = screenBounds.origin.y + (screenBounds.height - windowHeight - totalCascadeHeight) / 2
+        // Use intelligent cascade
+        let style: CascadeStyle = command.parameters?["style"] == "compact" ? .compact : .intelligent
+        let arrangements = cascadePositioner.arrangeCascade(
+            windows: windows,
+            style: style,
+            context: userContext,
+            screenBounds: screenBounds
+        )
         
         var results: [String] = []
         
-        for (index, window) in windows.enumerated() {
-            let cascadeStep = min(index, maxCascadeSteps - 1)
-            let x = startX + (CGFloat(cascadeStep) * cascadeOffset)
-            let y = startY + (CGFloat(cascadeStep) * cascadeOffset)
-            
-            let bounds = CGRect(x: x, y: y, width: windowWidth, height: windowHeight)
-            
-            if windowManager.setWindowBounds(window, bounds: bounds) {
-                results.append("Stacked \(window.appName) (position \(index + 1))")
+        // Apply the arrangements
+        for arrangement in arrangements {
+            if windowManager.setWindowBounds(arrangement.window, bounds: arrangement.targetBounds) {
+                results.append("Cascaded \(arrangement.window.appName) as \(arrangement.role.rawValue)")
                 
-                // Bring window to front in stacking order
-                _ = windowManager.focusWindow(window)
+                // Focus windows in reverse order so primary ends up on top
+                if arrangement.layerIndex == 0 {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        _ = self.windowManager.focusWindow(arrangement.window)
+                    }
+                }
             }
         }
         
         let success = !results.isEmpty
-        let message = success ? results.joined(separator: ", ") : "Failed to stack windows"
+        let message = success ? results.joined(separator: ", ") : "Failed to cascade windows"
         return CommandResult(success: success, message: message, command: command)
     }
     

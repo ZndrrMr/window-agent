@@ -16,7 +16,12 @@ class CommandExecutor {
     func executeCommands(_ commands: [WindowCommand]) async -> [CommandResult] {
         var results: [CommandResult] = []
         
-        for command in commands {
+        print("\n🔧 COMMAND EXECUTOR:")
+        print("  Received \(commands.count) command(s) to execute")
+        
+        for (index, command) in commands.enumerated() {
+            print("\n  Executing command \(index + 1)/\(commands.count): \(command.action.rawValue) \(command.target)")
+            
             // Add a small delay between commands to ensure they execute properly
             if !results.isEmpty {
                 try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
@@ -25,6 +30,8 @@ class CommandExecutor {
             let result = await executeCommand(command)
             results.append(result)
             
+            print("    Result: \(result.success ? "✅" : "❌") \(result.message)")
+            
             // If a command fails and it's critical (like opening an app), stop execution
             if !result.success && (command.action == .open || command.action == .focus) {
                 print("⚠️ Critical command failed, stopping execution: \(result.message)")
@@ -32,6 +39,7 @@ class CommandExecutor {
             }
         }
         
+        print("\n  Execution complete: \(results.count) results")
         return results
     }
     

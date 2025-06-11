@@ -117,6 +117,8 @@ class ClaudeLLMService {
     
     // MARK: - System Prompt
     private func buildSystemPrompt(context: LLMContext?) -> String {
+        // Get intelligent pattern hints
+        let patternHints = buildPatternHints(context: context)
         var prompt = """
         You are WindowAI, an intelligent macOS window management assistant. Your job is to help users control their windows using natural language commands.
         
@@ -135,8 +137,22 @@ class ClaudeLLMService {
         5. If an app isn't running, use open_app first, then position it
         6. Default to "optimal" size unless user specifies otherwise
         7. Use multiple tool calls for complex requests (e.g., "open Safari and Terminal side by side")
+        8. Consider CASCADE layouts as the default for multiple windows - they provide better visibility and access
+        9. CRITICAL: When user requests changes to multiple windows in one command, you MUST generate separate tool calls for each window. For example: "put messages in top right, make terminal tall, center arc browser" requires THREE tool calls, not one.
         
         INTELLIGENT WINDOW LAYOUT PRINCIPLES:
+        
+        CASCADE VS TILED LAYOUTS:
+        - CASCADE is often better for 3+ windows, providing partial visibility of all apps
+        - TILED works well for 2 windows or when users need maximum workspace
+        - On ULTRAWIDE screens, you can fit more tiled windows effectively
+        - On LAPTOP screens, cascade helps maximize limited space
+        
+        CASCADE POSITIONING:
+        - Primary window (most important) should be 60-80% visible
+        - Secondary windows should have title bars and key controls visible
+        - Use intelligent offsets based on screen size and window count
+        - Smaller offsets on laptops, larger on desktop displays
         
         1. TERMINAL WINDOWS:
            - Default: Position on the right side, taking up 1/3 of the screen width
@@ -161,7 +177,16 @@ class ClaudeLLMService {
            - Flexible sizing based on content
         
         5. CONTEXT-AWARE ARRANGEMENTS:
-           - "I want to code": Code editor (left 2/3) + Terminal (right 1/3)
+           When users express intent to work in a context:
+           
+           For "I want to code" or similar coding requests:
+           - PREFER individual snap_window commands for precise control:
+             1. snap_window target="Cursor" position="left" size="two_thirds"
+             2. snap_window target="Terminal" position="right" size="third"
+           - This gives users visibility into exactly what's happening
+           - Only use arrange_workspace("coding") for complex multi-app setups
+           
+           For other contexts:
            - "Research mode": Browser (primary) + Notes (right auxiliary)
            - "Communication": Messages/Slack (right 1/3) + main work app (left 2/3)
         
@@ -169,6 +194,16 @@ class ClaudeLLMService {
         - "Put terminal on the left taking half the screen" - honor this exactly
         - "I prefer my terminal full screen" - remember this preference
         - Always respect explicit user instructions over defaults
+        
+        TOOL SELECTION GUIDANCE:
+        - Use individual snap_window/open_app commands when:
+          • User mentions specific apps and positions
+          • Simple 2-3 app arrangements
+          • User wants visibility into exact actions
+        - Use arrange_workspace only when:
+          • User explicitly mentions "workspace" or "environment"
+          • Complex multi-app setups (4+ apps)
+          • User references a known workspace by name
         
         CONTEXT MEANINGS:
         - "coding": Development environment (IDE + terminal in smart layout)
@@ -183,6 +218,9 @@ class ClaudeLLMService {
         
         // Add user-specific preferences if any exist
         prompt += UserLayoutPreferences.shared.generatePreferenceString()
+        
+        // Add intelligent pattern hints
+        prompt += patternHints
         
         if let context = context {
             prompt += "\n\nCURRENT SYSTEM STATE:\n"
@@ -262,8 +300,11 @@ class ClaudeLLMService {
         var commands: [WindowCommand] = []
         
         print("\n📋 CLAUDE'S TOOL CALLS:")
+        print("  Total content blocks: \(response.content.count)")
         
-        for content in response.content {
+        for (index, content) in response.content.enumerated() {
+            print("  Content block \(index + 1): type=\(content.type)")
+            
             if content.type == "tool_use",
                let id = content.id,
                let name = content.name,
@@ -282,7 +323,12 @@ class ClaudeLLMService {
                 
                 if let command = ToolToCommandConverter.convertToolUse(toolUse) {
                     commands.append(command)
+                    print("    ✓ Command added to list (total: \(commands.count))")
+                } else {
+                    print("    ✗ Failed to convert tool use to command")
                 }
+            } else if let text = content.text {
+                print("    Text: \(text)")
             }
         }
         
@@ -299,6 +345,31 @@ class ClaudeLLMService {
         }
         
         return commands
+    }
+    
+    // MARK: - Pattern Hints
+    private func buildPatternHints(context: LLMContext?) -> String {
+        guard let context = context else { return "" }
+        
+        let patternManager = IntelligentPatternManager.shared
+        let screenConfig = ScreenConfiguration.current
+        let activeApps = context.runningApps
+        
+        // Create user context from available info
+        let userContext = UserContext(
+            activity: nil, // Could be inferred from apps
+            focusMode: false
+        )
+        
+        // Find similar patterns
+        let patterns = patternManager.findSimilarPatterns(
+            to: userContext,
+            screenConfig: screenConfig,
+            activeApps: activeApps,
+            limit: 3
+        )
+        
+        return patternManager.generateLLMHints(from: patterns)
     }
     
     // MARK: - Context Building
