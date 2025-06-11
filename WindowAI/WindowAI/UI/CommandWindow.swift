@@ -3,7 +3,7 @@ import SwiftUI
 
 class CommandWindow: NSWindow {
     private let preferences = UserPreferences.shared
-    private var commandTextField: NSTextField!
+    private var commandTextField: SmartCommandTextField!
     private var suggestionLabel: NSTextField!
     private var loadingIndicator: NSProgressIndicator!
     private var containerView: NSView!
@@ -17,6 +17,12 @@ class CommandWindow: NSWindow {
     // Animation properties
     private var showTimer: Timer?
     private var hideTimer: Timer?
+    
+    // Styling timer
+    private var stylingTimer: Timer?
+    
+    // Track when window just opened to prevent early styling
+    private var windowJustOpened = false
     
     override init(contentRect: NSRect, styleMask style: NSWindow.StyleMask, backing backingStoreType: NSWindow.BackingStoreType, defer flag: Bool) {
         super.init(contentRect: contentRect, styleMask: [.borderless], backing: backingStoreType, defer: flag)
@@ -72,7 +78,7 @@ class CommandWindow: NSWindow {
         containerView.wantsLayer = true
         
         // Command text field with beautiful styling
-        commandTextField = NSTextField()
+        commandTextField = SmartCommandTextField()
         commandTextField.isBordered = false
         commandTextField.isEditable = true
         commandTextField.isSelectable = true
@@ -202,6 +208,12 @@ class CommandWindow: NSWindow {
         hideTimer?.invalidate()
         hideTimer = nil
         
+        // Mark that window just opened
+        windowJustOpened = true
+        
+        // Clear text field for fresh start
+        commandTextField.stringValue = ""
+        
         // Center on current screen (in case it changed)
         centerOnScreen()
         
@@ -236,13 +248,10 @@ class CommandWindow: NSWindow {
             self.animator().alphaValue = 1.0
             self.animator().setFrame(endFrame, display: true)
         }) {
-            // Focus the text field after animation
-            self.focusTextField()
-        }
-        
-        // Also try to focus immediately
-        DispatchQueue.main.async {
-            self.focusTextField()
+            // Focus the text field after animation with delay to prevent selection
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                self.focusTextField()
+            }
         }
     }
     
@@ -348,28 +357,24 @@ class CommandWindow: NSWindow {
     }
     
     private func focusTextField() {
-        // Multiple attempts to ensure focus
+        // Simple, clean focus approach
         self.makeKey()
         
-        // Clear any existing text and focus
-        commandTextField.stringValue = ""
-        
-        // Make the text field first responder
+        // Make the text field first responder with minimal intervention
         if self.makeFirstResponder(commandTextField) {
-            commandTextField.selectText(nil)
-        }
-        
-        // Additional focus attempts
-        DispatchQueue.main.async {
-            self.commandTextField.window?.makeFirstResponder(self.commandTextField)
-            self.commandTextField.selectText(nil)
-        }
-        
-        // Final attempt after a short delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            if self.firstResponder != self.commandTextField {
-                self.makeFirstResponder(self.commandTextField)
-                self.commandTextField.selectText(nil)
+            // Configure editor settings once
+            if let editor = commandTextField.currentEditor() as? NSTextView {
+                // Disable automatic text features that might interfere
+                editor.isAutomaticTextReplacementEnabled = false
+                editor.isAutomaticSpellingCorrectionEnabled = false
+                editor.isAutomaticQuoteSubstitutionEnabled = false
+                editor.isAutomaticDashSubstitutionEnabled = false
+                
+                // Position cursor at end of any existing text
+                DispatchQueue.main.async {
+                    let textLength = self.commandTextField.stringValue.count
+                    editor.setSelectedRange(NSRange(location: textLength, length: 0))
+                }
             }
         }
     }
@@ -406,15 +411,30 @@ class CommandWindow: NSWindow {
         // Clean up timers
         showTimer?.invalidate()
         hideTimer?.invalidate()
+        stylingTimer?.invalidate()
     }
 }
 
 // MARK: - NSTextFieldDelegate
 extension CommandWindow: NSTextFieldDelegate {
     func controlTextDidChange(_ obj: Notification) {
-        guard let textField = obj.object as? NSTextField else { return }
+        guard let textField = obj.object as? SmartCommandTextField else { return }
         
         let text = textField.stringValue
+        
+        // Cancel any pending styling completely during active typing
+        stylingTimer?.invalidate()
+        stylingTimer = nil
+        
+        // If window just opened, wait longer before styling to prevent flash
+        let delay: TimeInterval = windowJustOpened ? 2.0 : 0.5
+        
+        // Only start styling timer after user stops typing for a while
+        stylingTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+            self?.windowJustOpened = false // Reset after first styling
+            textField.updateTextWithAppStyling()
+        }
+        
         if text.isEmpty {
             autocompleteWindow.hideDropdown()
         } else {
@@ -490,12 +510,21 @@ extension CommandWindow: AutocompleteDropdownDelegate {
         
         print("📝 New text field value: '\(commandTextField.stringValue)'")
         
-        // Position cursor at end
+        // Cancel any pending styling timer since we're completing now
+        stylingTimer?.invalidate()
+        stylingTimer = nil
+        
+        // Position cursor at end first
         DispatchQueue.main.async {
             if let editor = self.commandTextField.currentEditor() as? NSTextView {
                 let length = self.commandTextField.stringValue.count
                 editor.setSelectedRange(NSRange(location: length, length: 0))
                 print("🎯 Cursor positioned at: \(length)")
+                
+                // Delay styling to avoid interference with cursor positioning
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    self.commandTextField.updateTextWithAppStyling()
+                }
             }
         }
         

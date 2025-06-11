@@ -379,6 +379,7 @@ func updateAppPreferences(feedback: UserFeedback) {
 - [ ] Visual feedback system
 - [ ] Onboarding wizard
 - [ ] Command history
+- [ ] Fix text highlighting flash when command window opens (cosmetic issue, no text deletion)
 
 #### Phase 5: Distribution
 - [ ] Developer ID certificate
