@@ -355,6 +355,16 @@ class WindowManagementTools {
 // MARK: - Tool to Command Converter
 class ToolToCommandConverter {
     
+    // Helper to extract display parameter (handles both Int and String)
+    private static func extractDisplay(from input: [String: Any]) -> Int? {
+        if let displayInt = input["display"] as? Int {
+            return displayInt
+        } else if let displayStr = input["display"] as? String, let displayInt = Int(displayStr) {
+            return displayInt
+        }
+        return nil
+    }
+    
     static func convertToolUse(_ toolUse: LLMToolUse) -> WindowCommand? {
         // Convert AnyCodable values to regular Swift types
         var input: [String: Any] = [:]
@@ -397,7 +407,7 @@ class ToolToCommandConverter {
             return nil
         }
         
-        let display = input["display"] as? Int
+        let display = extractDisplay(from: input)
         
         return WindowCommand(
             action: .move,
@@ -452,7 +462,7 @@ class ToolToCommandConverter {
             parameters["preserve_height"] = "true"
         }
         
-        let display = input["display"] as? Int
+        let display = extractDisplay(from: input)
         
         return WindowCommand(
             action: .resize,
@@ -471,7 +481,7 @@ class ToolToCommandConverter {
         
         let position = (input["position"] as? String).flatMap { WindowPosition(rawValue: $0) }
         let size = (input["size"] as? String).flatMap { WindowSize(rawValue: $0) }
-        let display = input["display"] as? Int
+        let display = extractDisplay(from: input)
         
         return WindowCommand(
             action: .open,
@@ -523,7 +533,7 @@ class ToolToCommandConverter {
         }
         
         let size = (input["size"] as? String).flatMap { WindowSize(rawValue: $0) } ?? .medium
-        let display = input["display"] as? Int
+        let display = extractDisplay(from: input)
         
         return WindowCommand(
             action: .snap,
@@ -550,7 +560,7 @@ class ToolToCommandConverter {
             return nil
         }
         
-        let display = input["display"] as? Int
+        let display = extractDisplay(from: input)
         
         return WindowCommand(
             action: .maximize,
@@ -572,7 +582,7 @@ class ToolToCommandConverter {
             parameters["focus"] = focusMode ? "true" : "false"
         }
         
-        let display = input["display"] as? Int
+        let display = extractDisplay(from: input)
         
         return WindowCommand(
             action: .stack, // Using stack action for cascade
@@ -592,7 +602,7 @@ class ToolToCommandConverter {
             parameters["layout"] = layout
         }
         
-        let display = input["display"] as? Int
+        let display = extractDisplay(from: input)
         
         return WindowCommand(
             action: .tile,

@@ -236,10 +236,18 @@ class WindowPositioner {
             return CommandResult(success: false, message: "Could not find window for '\(command.target)'", command: command)
         }
         
-        let success = windowManager.maximizeWindow(window)
-        let message = success ? "Maximized \(command.target)" : "Failed to maximize \(command.target)"
-        
-        return CommandResult(success: success, message: message, command: command)
+        // If display is specified, maximize on that display
+        if let displayIndex = command.display {
+            let displayBounds = getVisibleDisplayBounds(displayIndex)
+            let success = windowManager.setWindowBounds(window, bounds: displayBounds)
+            let message = success ? "Maximized \(command.target) on display \(displayIndex)" : "Failed to maximize \(command.target)"
+            return CommandResult(success: success, message: message, command: command)
+        } else {
+            // Use default maximize which uses window's current display
+            let success = windowManager.maximizeWindow(window)
+            let message = success ? "Maximized \(command.target)" : "Failed to maximize \(command.target)"
+            return CommandResult(success: success, message: message, command: command)
+        }
     }
     
     private func minimizeWindow(_ command: WindowCommand) -> CommandResult {
