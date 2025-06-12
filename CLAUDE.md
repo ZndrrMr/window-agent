@@ -342,29 +342,37 @@ func updateAppPreferences(feedback: UserFeedback) {
 - Onboarding flow structure
 - Basic app lifecycle management
 - Comprehensive development roadmap
+- **Phase 1**: Core window management (WindowManager with Accessibility APIs)
+- **Phase 2**: Full LLM integration with Claude API
+- **Hotkey system**: Global hotkey registration with Carbon APIs
+- **App autocomplete**: Smart suggestions with fuzzy matching
+- **Cascade positioning**: Intelligent window layering system
+- **Learning system**: Pattern tracking and user preferences
 
 ### Current Focus 🎯
-**Phase 1**: Core Window Management
-- [ ] Implement WindowManager.swift with real Accessibility APIs
-- [ ] Build app constraint database
-- [ ] Test basic window operations
-- [ ] Create unit tests for core functionality
+**Phase 3**: Advanced Context Awareness & Polish
+- [ ] Multi-display support (remaining from Phase 1)
+- [ ] User feedback UI for learning system
+- [ ] Persist learning patterns between sessions
+- [ ] Enhanced workspace layout execution
+- [ ] Command history implementation
+- [ ] Unit tests for core functionality
 
 ### TODO by Phase 🚧
 
 #### Phase 1: Core Window Management
-- [ ] AXUIElement operations for window control
-- [ ] App launching with NSWorkspace
-- [ ] Window state management (min/max/fullscreen)
+- [x] AXUIElement operations for window control
+- [x] App launching with NSWorkspace
+- [x] Window state management (min/max/fullscreen)
 - [ ] Multi-display support
-- [ ] App-specific constraint handling
+- [x] App-specific constraint handling
 
 #### Phase 2: LLM Integration  
-- [ ] Claude API integration (start with Haiku)
-- [ ] Structured command schema
-- [ ] Natural language parser
-- [ ] Command validation layer
-- [ ] Error handling and fallbacks
+- [x] Claude API integration (using Sonnet)
+- [x] Structured command schema
+- [x] Natural language parser
+- [x] Command validation layer
+- [x] Error handling and fallbacks
 
 #### Phase 3: Context Awareness
 - [ ] App categorization system
@@ -375,11 +383,11 @@ func updateAppPreferences(feedback: UserFeedback) {
 
 #### Phase 4: UX Polish
 - [ ] Settings UI implementation
-- [ ] Command suggestions
+- [x] Command suggestions (App autocomplete with fuzzy matching implemented)
 - [ ] Visual feedback system
-- [ ] Onboarding wizard
+- [ ] Onboarding wizard  
 - [ ] Command history
-- [ ] Fix text highlighting flash when command window opens (cosmetic issue, no text deletion)
+- [x] Fix text highlighting flash when command window opens (completed)
 
 #### Phase 5: Distribution
 - [ ] Developer ID certificate
