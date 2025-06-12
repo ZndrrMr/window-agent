@@ -198,6 +198,21 @@ class WindowManager {
         return result == .success
     }
     
+    func zoomWindow(_ windowInfo: WindowInfo) -> Bool {
+        guard checkAccessibilityPermissions() else { return false }
+        
+        // Try to click the zoom button (green button)
+        var zoomButton: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(windowInfo.windowRef, kAXZoomButtonAttribute as CFString, &zoomButton)
+        
+        if result == .success, let button = zoomButton as! AXUIElement? {
+            let clickResult = AXUIElementPerformAction(button, kAXPressAction as CFString)
+            return clickResult == .success
+        }
+        
+        return false
+    }
+    
     func maximizeWindow(_ windowInfo: WindowInfo) -> Bool {
         guard checkAccessibilityPermissions() else { return false }
         
