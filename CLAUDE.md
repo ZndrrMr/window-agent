@@ -445,6 +445,7 @@ let functionSchema = """
 3. **Timing Issues**: Apps need time to launch before window manipulation
 4. **Electron Apps**: Often have non-standard window behavior
 5. **Full Screen Spaces**: Require special handling
+6. **NEVER USE ZOOM BUTTON**: Do not use the macOS zoom button (green button) for maximize operations. Always use manual bounds setting instead.
 
 ### Performance Optimization
 - Cache AXUIElement references (invalidate on app changes)

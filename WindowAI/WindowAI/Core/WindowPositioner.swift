@@ -255,35 +255,16 @@ class WindowPositioner {
             // Also log current window position for comparison
             print("  📍 Current window bounds: \(window.bounds)")
             
-            // Try to use the zoom button first (native maximize)
-            print("  🟢 Attempting zoom button click...")
-            var success = windowManager.zoomWindow(window)
+            // Manual maximize only - never use zoom button
+            let position = CGPoint(x: displayBounds.minX, y: displayBounds.minY)
+            let size = displayBounds.size
             
-            if success {
-                print("  ✅ Zoom button worked!")
-                // Give it a moment to animate
-                Thread.sleep(forTimeInterval: 0.5)
-                
-                // Check if it's on the right display
-                let currentDisplay = windowManager.getDisplayForWindow(window)
-                if currentDisplay != displayIndex {
-                    print("  ⚠️ Window zoomed to wrong display (\(currentDisplay)), moving to display \(displayIndex)")
-                    success = windowManager.setWindowBounds(window, bounds: displayBounds, validate: false)
-                }
-            } else {
-                print("  ⚠️ Zoom button failed, using manual bounds")
-                // Manual maximize - let's try a different approach
-                // First move to correct position, then resize
-                let position = CGPoint(x: displayBounds.minX, y: displayBounds.minY)
-                let size = displayBounds.size
-                
-                print("  📍 Setting position to: \(position)")
-                print("  📐 Setting size to: \(size)")
-                
-                // Create a window-sized rect at the correct position
-                let targetBounds = CGRect(origin: position, size: size)
-                success = windowManager.setWindowBounds(window, bounds: targetBounds, validate: false)
-            }
+            print("  📍 Setting position to: \(position)")
+            print("  📐 Setting size to: \(size)")
+            
+            // Create a window-sized rect at the correct position
+            let targetBounds = CGRect(origin: position, size: size)
+            let success = windowManager.setWindowBounds(window, bounds: targetBounds, validate: false)
             
             let message = success ? "Maximized \(command.target) on display \(displayIndex)" : "Failed to maximize \(command.target)"
             return CommandResult(success: success, message: message, command: command)

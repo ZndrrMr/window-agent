@@ -165,11 +165,20 @@ class WindowManager {
         // Validate bounds against app constraints and screen bounds (unless disabled)
         let finalBounds = validate ? validateWindowBounds(bounds, for: windowInfo.appName) : bounds
         
+        if bounds != finalBounds {
+            print("    ⚠️ Bounds were adjusted from \(bounds) to \(finalBounds)")
+        }
+        
         let positionValue = AXValueCreate(.cgPoint, withUnsafePointer(to: finalBounds.origin) { $0 })
         let sizeValue = AXValueCreate(.cgSize, withUnsafePointer(to: finalBounds.size) { $0 })
         
+        print("    📍 Setting position to: \(finalBounds.origin)")
         let positionResult = AXUIElementSetAttributeValue(windowInfo.windowRef, kAXPositionAttribute as CFString, positionValue!)
+        print("    🎯 Position result: \(positionResult == .success ? "✅ Success" : "❌ Failed with error \(positionResult.rawValue)")")
+        
+        print("    📐 Setting size to: \(finalBounds.size)")
         let sizeResult = AXUIElementSetAttributeValue(windowInfo.windowRef, kAXSizeAttribute as CFString, sizeValue!)
+        print("    🎯 Size result: \(sizeResult == .success ? "✅ Success" : "❌ Failed with error \(sizeResult.rawValue)")")
         
         return positionResult == .success && sizeResult == .success
     }
@@ -206,8 +215,12 @@ class WindowManager {
         let result = AXUIElementCopyAttributeValue(windowInfo.windowRef, kAXZoomButtonAttribute as CFString, &zoomButton)
         
         if result == .success, let button = zoomButton as! AXUIElement? {
+            print("    🟢 Found zoom button, attempting to click...")
             let clickResult = AXUIElementPerformAction(button, kAXPressAction as CFString)
+            print("    🎯 Zoom button click result: \(clickResult == .success ? "✅ Success" : "❌ Failed with error \(clickResult.rawValue)")")
             return clickResult == .success
+        } else {
+            print("    ❌ Could not find zoom button (error: \(result.rawValue))")
         }
         
         return false
@@ -216,22 +229,85 @@ class WindowManager {
     func maximizeWindow(_ windowInfo: WindowInfo) -> Bool {
         guard checkAccessibilityPermissions() else { return false }
         
-        // Get screen bounds for the display this window is on
-        let screenBounds = getScreenBounds(for: windowInfo.bounds.origin)
+        // Manual maximize only - never use zoom button
+        // Get the screen that contains this window
+        var targetScreen: NSScreen?
+        for screen in NSScreen.screens {
+            if screen.frame.contains(windowInfo.bounds.origin) {
+                targetScreen = screen
+                break
+            }
+        }
         
-        // Apply some padding for menu bar and dock
-        let menuBarHeight: CGFloat = 25
-        let dockHeight: CGFloat = 80
-        let padding: CGFloat = 10
+        guard let screen = targetScreen ?? NSScreen.main else {
+            return false
+        }
         
-        let maxBounds = CGRect(
-            x: screenBounds.origin.x + padding,
-            y: screenBounds.origin.y + menuBarHeight,
-            width: screenBounds.width - (padding * 2),
-            height: screenBounds.height - menuBarHeight - dockHeight - padding
+        // Get the full frame and visible frame
+        let fullFrame = screen.frame
+        let visibleFrame = screen.visibleFrame
+        
+        print("  📱 Screen info:")
+        print("    Full frame: \(fullFrame)")
+        print("    Visible frame: \(visibleFrame)")
+        
+        // Calculate the actual maximize bounds
+        // The visible frame should already exclude menu bar and dock, but let's be explicit
+        let maximizeBounds = CGRect(
+            x: fullFrame.origin.x,
+            y: visibleFrame.origin.y,
+            width: fullFrame.width,
+            height: visibleFrame.height
         )
         
-        return setWindowBounds(windowInfo, bounds: maxBounds)
+        print("  🎯 Maximize bounds: \(maximizeBounds)")
+        
+        // Try setting position and size separately for better compatibility
+        let positionValue = AXValueCreate(.cgPoint, withUnsafePointer(to: maximizeBounds.origin) { $0 })
+        let sizeValue = AXValueCreate(.cgSize, withUnsafePointer(to: maximizeBounds.size) { $0 })
+        
+        // First set the position
+        print("  📍 Setting position to: \(maximizeBounds.origin)")
+        let posResult = AXUIElementSetAttributeValue(windowInfo.windowRef, kAXPositionAttribute as CFString, positionValue!)
+        print("    Position result: \(posResult == .success ? "✅" : "❌ \(posResult.rawValue)")")
+        
+        // Then set the size
+        print("  📐 Setting size to: \(maximizeBounds.size)")
+        let sizeResult = AXUIElementSetAttributeValue(windowInfo.windowRef, kAXSizeAttribute as CFString, sizeValue!)
+        print("    Size result: \(sizeResult == .success ? "✅" : "❌ \(sizeResult.rawValue)")")
+        
+        // Verify the final bounds
+        if posResult == .success && sizeResult == .success {
+            Thread.sleep(forTimeInterval: 0.1) // Give it a moment to apply
+            
+            // Read back the actual bounds
+            var actualPosition: CFTypeRef?
+            var actualSize: CFTypeRef?
+            
+            if AXUIElementCopyAttributeValue(windowInfo.windowRef, kAXPositionAttribute as CFString, &actualPosition) == .success,
+               AXUIElementCopyAttributeValue(windowInfo.windowRef, kAXSizeAttribute as CFString, &actualSize) == .success {
+                
+                var finalOrigin = CGPoint.zero
+                var finalSize = CGSize.zero
+                
+                if let posValue = actualPosition {
+                    AXValueGetValue(posValue as! AXValue, .cgPoint, &finalOrigin)
+                }
+                if let sizeVal = actualSize {
+                    AXValueGetValue(sizeVal as! AXValue, .cgSize, &finalSize)
+                }
+                
+                print("  📊 Actual final bounds: origin=\(finalOrigin), size=\(finalSize)")
+                
+                if finalOrigin != maximizeBounds.origin || finalSize != maximizeBounds.size {
+                    print("  ⚠️ Window didn't reach requested bounds!")
+                    print("    Requested: \(maximizeBounds)")
+                    print("    Actual: \(CGRect(origin: finalOrigin, size: finalSize))")
+                }
+            }
+        }
+        
+        return posResult == .success && sizeResult == .success
     }
     
     func closeWindow(_ windowInfo: WindowInfo) -> Bool {
