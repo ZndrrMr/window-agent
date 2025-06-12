@@ -190,6 +190,16 @@ class WindowPositioner {
     private func snapWindow(_ command: WindowCommand) -> CommandResult {
         print("\n🎯 SNAPPING: \(command.target)")
         
+        // Log display information
+        if let displayIndex = command.display {
+            if let displayInfo = windowManager.getDisplayInfo(at: displayIndex) {
+                print("  📱 Target Display: \(displayIndex) - \(displayInfo.name)")
+                print("  📐 Display bounds: \(displayInfo.visibleFrame)")
+            } else {
+                print("  ⚠️ Invalid display index: \(displayIndex)")
+            }
+        }
+        
         guard let windows = getTargetWindows(command.target), let window = windows.first else {
             print("  ❌ Could not find window")
             return CommandResult(success: false, message: "Could not find window for '\(command.target)'", command: command)
@@ -801,7 +811,8 @@ class WindowPositioner {
             windows: windows,
             style: style,
             context: userContext,
-            screenBounds: screenBounds
+            screenBounds: screenBounds,
+            displayIndex: displayIndex
         )
         
         var results: [String] = []

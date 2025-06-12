@@ -140,6 +140,15 @@ class ClaudeLLMService {
         8. Consider CASCADE layouts as the default for multiple windows - they provide better visibility and access
         9. CRITICAL: When user requests changes to multiple windows in one command, you MUST generate separate tool calls for each window. For example: "put messages in top right, make terminal tall, center arc browser" requires THREE tool calls, not one.
         
+        MULTI-DISPLAY HANDLING:
+        - Displays are numbered: 0 = main/primary display, 1 = second display, etc.
+        - When users say "external monitor", "second screen", "other display" → use display: 1
+        - When users say "main screen", "primary display", "laptop screen" → use display: 0
+        - "Move to left display" or "right monitor" → determine based on physical arrangement in context
+        - If no display is specified, use the display where the window currently exists
+        - For new windows (open_app), default to main display unless specified
+        - Users can say things like: "put Safari on my external monitor" → use display: 1
+        
         INTELLIGENT WINDOW LAYOUT PRINCIPLES:
         
         CASCADE VS TILED LAYOUTS:
@@ -231,12 +240,18 @@ class ClaudeLLMService {
                 prompt += "Visible windows: \(windowList)\n"
             }
             
-            if context.displayCount > 1 {
-                prompt += "Multiple displays available (\(context.displayCount) total)\n"
+            // Display configuration
+            prompt += "\nDISPLAY CONFIGURATION:\n"
+            for (index, resolution) in context.screenResolutions.enumerated() {
+                let isMain = index == 0
+                prompt += "Display \(index): \(Int(resolution.width))x\(Int(resolution.height))\(isMain ? " (Main)" : "")\n"
             }
             
-            if let firstScreen = context.screenResolutions.first {
-                prompt += "Main screen: \(Int(firstScreen.width))x\(Int(firstScreen.height))\n"
+            if context.displayCount > 1 {
+                prompt += "\nWindows by display:\n"
+                for window in context.visibleWindows {
+                    prompt += "- \(window.appName) is on display \(window.displayIndex)\n"
+                }
             }
         }
         

@@ -32,17 +32,16 @@ class LLMService {
     }
     
     // MARK: - Public API
-    func processCommand(_ userInput: String) async throws -> LLMResponse {
+    func processCommand(_ userInput: String, context: LLMContext? = nil) async throws -> LLMResponse {
         // Always use Claude for now since it's the most capable
-        return try await processWithClaude(userInput)
+        return try await processWithClaude(userInput, context: context)
     }
     
-    private func processWithClaude(_ userInput: String) async throws -> LLMResponse {
+    private func processWithClaude(_ userInput: String, context: LLMContext? = nil) async throws -> LLMResponse {
         guard let claude = claudeService else {
             throw LLMServiceError.invalidAPIKey
         }
         
-        let context = claude.buildCurrentContext(windowManager: windowManager)
         let commands = try await claude.processCommand(userInput, context: context)
         
         return LLMResponse(

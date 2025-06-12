@@ -151,6 +151,10 @@ class WindowManagementTools {
                 "preserve_height": LLMTool.ToolInputSchema.PropertyDefinition(
                     type: "boolean",
                     description: "If true, keep current height and only change width"
+                ),
+                "display": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "integer",
+                    description: "Display index to calculate size relative to (0 for main display, 1 for second display, etc.). If omitted, uses the display the window is currently on"
                 )
             ],
             required: ["app_name", "size"]
@@ -176,6 +180,10 @@ class WindowManagementTools {
                     type: "string",
                     description: "Optional size for the window after opening",
                     options: ["small", "medium", "large", "half", "quarter", "full", "optimal"]
+                ),
+                "display": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "integer",
+                    description: "Display index where to open the window (0 for main display, 1 for second display, etc.). If omitted, opens on main display"
                 )
             ],
             required: ["app_name"]
@@ -247,6 +255,10 @@ class WindowManagementTools {
                     type: "string",
                     description: "Size for the snapped window",
                     options: ["small", "medium", "large", "half", "third", "two-thirds"]
+                ),
+                "display": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "integer",
+                    description: "Display index (0 for main display, 1 for second display, etc.). Omit to use current display"
                 )
             ],
             required: ["app_name", "position"]
@@ -305,6 +317,10 @@ class WindowManagementTools {
                 "focus_mode": LLMTool.ToolInputSchema.PropertyDefinition(
                     type: "boolean",
                     description: "Whether to optimize for focused work (larger primary window)"
+                ),
+                "display": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "integer",
+                    description: "Display index to cascade windows on (0 for main display, 1 for second display, etc.). If omitted, cascades on the display with most windows"
                 )
             ],
             required: ["target"]
@@ -325,6 +341,10 @@ class WindowManagementTools {
                     type: "string",
                     description: "Tiling layout to use",
                     options: ["grid", "horizontal", "vertical", "primary-left"]
+                ),
+                "display": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "integer",
+                    description: "Display index to tile windows on (0 for main display, 1 for second display, etc.). If omitted, tiles on the display with most windows"
                 )
             ],
             required: ["target"]
@@ -432,11 +452,14 @@ class ToolToCommandConverter {
             parameters["preserve_height"] = "true"
         }
         
+        let display = input["display"] as? Int
+        
         return WindowCommand(
             action: .resize,
             target: appName,
             size: size ?? .medium,
             customSize: customSize,
+            display: display,
             parameters: parameters.isEmpty ? nil : parameters
         )
     }
@@ -448,12 +471,14 @@ class ToolToCommandConverter {
         
         let position = (input["position"] as? String).flatMap { WindowPosition(rawValue: $0) }
         let size = (input["size"] as? String).flatMap { WindowSize(rawValue: $0) }
+        let display = input["display"] as? Int
         
         return WindowCommand(
             action: .open,
             target: appName,
             position: position,
-            size: size
+            size: size,
+            display: display
         )
     }
     
@@ -498,12 +523,14 @@ class ToolToCommandConverter {
         }
         
         let size = (input["size"] as? String).flatMap { WindowSize(rawValue: $0) } ?? .medium
+        let display = input["display"] as? Int
         
         return WindowCommand(
             action: .snap,
             target: appName,
             position: position,
-            size: size
+            size: size,
+            display: display
         )
     }
     
@@ -545,9 +572,12 @@ class ToolToCommandConverter {
             parameters["focus"] = focusMode ? "true" : "false"
         }
         
+        let display = input["display"] as? Int
+        
         return WindowCommand(
             action: .stack, // Using stack action for cascade
             target: target,
+            display: display,
             parameters: parameters
         )
     }
@@ -562,9 +592,12 @@ class ToolToCommandConverter {
             parameters["layout"] = layout
         }
         
+        let display = input["display"] as? Int
+        
         return WindowCommand(
             action: .tile,
             target: target,
+            display: display,
             parameters: parameters
         )
     }

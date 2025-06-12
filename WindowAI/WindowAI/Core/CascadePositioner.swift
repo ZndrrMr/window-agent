@@ -103,11 +103,19 @@ class CascadePositioner {
     func arrangeCascade(windows: [WindowInfo],
                        style: CascadeStyle = .intelligent,
                        context: UserContext? = nil,
-                       screenBounds: CGRect? = nil) -> [WindowArrangement] {
+                       screenBounds: CGRect? = nil,
+                       displayIndex: Int? = nil) -> [WindowArrangement] {
         
         guard !windows.isEmpty else { return [] }
         
-        let bounds = screenBounds ?? NSScreen.main?.visibleFrame ?? .zero
+        // If display index is provided, use that display's bounds
+        let bounds: CGRect
+        if let displayIdx = displayIndex, 
+           let displayInfo = windowManager.getDisplayInfo(at: displayIdx) {
+            bounds = displayInfo.visibleFrame
+        } else {
+            bounds = screenBounds ?? NSScreen.main?.visibleFrame ?? .zero
+        }
         let appPreferences = buildAppPreferences()
         
         // Sort windows by importance

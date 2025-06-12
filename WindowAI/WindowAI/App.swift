@@ -167,6 +167,49 @@ class WindowAIController: HotkeyManagerDelegate, LLMServiceDelegate {
           }
       }
     
+    // MARK: - Context Building
+    private func buildLLMContext() -> LLMContext {
+        let windowManager = WindowManager.shared
+        let allWindows = windowManager.getAllWindows()
+        let displays = windowManager.getAllDisplayInfo()
+        
+        // Get running apps
+        let runningApps = NSWorkspace.shared.runningApplications
+            .compactMap { $0.localizedName }
+            .filter { !$0.isEmpty }
+            .sorted()
+        
+        // Build window summaries with display info
+        let visibleWindows = allWindows.map { window in
+            LLMContext.WindowSummary(
+                title: window.title,
+                appName: window.appName,
+                bounds: window.bounds,
+                isMinimized: windowManager.isWindowVisible(window),
+                displayIndex: windowManager.getDisplayForWindow(window)
+            )
+        }
+        
+        // Get screen resolutions
+        let screenResolutions = displays.map { $0.frame.size }
+        
+        // Build display descriptions for the prompt
+        let displayDescriptions = displays.enumerated().map { index, display in
+            "\(index): \(display.name) (\(Int(display.frame.width))x\(Int(display.frame.height)))\(display.isMain ? " - Main" : "")"
+        }.joined(separator: ", ")
+        
+        print("📱 Display Configuration: \(displayDescriptions)")
+        
+        return LLMContext(
+            runningApps: runningApps,
+            visibleWindows: visibleWindows,
+            screenResolutions: screenResolutions,
+            currentWorkspace: nil,
+            displayCount: displays.count,
+            userPreferences: nil
+        )
+    }
+    
     // MARK: - Command Processing
     @objc private func handleCommandEntered(_ notification: Notification) {
         guard let userInfo = notification.userInfo,
@@ -198,7 +241,8 @@ class WindowAIController: HotkeyManagerDelegate, LLMServiceDelegate {
         
         Task {
             do {
-                let response = try await llmService.processCommand(userInput)
+                let context = buildLLMContext()
+                let response = try await llmService.processCommand(userInput, context: context)
                 
                 let duration = Date().timeIntervalSince(startTime)
                 analyticsService.trackLLMRequest(

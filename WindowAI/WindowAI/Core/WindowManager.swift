@@ -306,6 +306,84 @@ class WindowManager {
         }
         return NSScreen.main?.visibleFrame ?? .zero
     }
+    
+    // MARK: - Display Information
+    func getDisplayCount() -> Int {
+        return NSScreen.screens.count
+    }
+    
+    func getDisplayInfo(at index: Int) -> DisplayInfo? {
+        let screens = NSScreen.screens
+        guard index >= 0 && index < screens.count else { return nil }
+        
+        let screen = screens[index]
+        let isMain = screen == NSScreen.main
+        
+        return DisplayInfo(
+            index: index,
+            name: screen.localizedName,
+            frame: screen.frame,
+            visibleFrame: screen.visibleFrame,
+            isMain: isMain,
+            backingScaleFactor: screen.backingScaleFactor
+        )
+    }
+    
+    func getAllDisplayInfo() -> [DisplayInfo] {
+        return NSScreen.screens.enumerated().map { index, screen in
+            DisplayInfo(
+                index: index,
+                name: screen.localizedName,
+                frame: screen.frame,
+                visibleFrame: screen.visibleFrame,
+                isMain: screen == NSScreen.main,
+                backingScaleFactor: screen.backingScaleFactor
+            )
+        }
+    }
+    
+    func getDisplayForWindow(_ windowInfo: WindowInfo) -> Int {
+        let windowCenter = CGPoint(
+            x: windowInfo.bounds.midX,
+            y: windowInfo.bounds.midY
+        )
+        
+        for (index, screen) in NSScreen.screens.enumerated() {
+            if screen.frame.contains(windowCenter) {
+                return index
+            }
+        }
+        
+        // Default to main display if not found
+        return 0
+    }
+    
+    func getWindowsOnDisplay(_ displayIndex: Int) -> [WindowInfo] {
+        let allWindows = getAllWindows()
+        guard displayIndex >= 0 && displayIndex < NSScreen.screens.count else {
+            return []
+        }
+        
+        let displayBounds = NSScreen.screens[displayIndex].frame
+        
+        return allWindows.filter { window in
+            let windowCenter = CGPoint(
+                x: window.bounds.midX,
+                y: window.bounds.midY
+            )
+            return displayBounds.contains(windowCenter)
+        }
+    }
+}
+
+// MARK: - Display Info Structure
+struct DisplayInfo {
+    let index: Int
+    let name: String
+    let frame: CGRect
+    let visibleFrame: CGRect
+    let isMain: Bool
+    let backingScaleFactor: CGFloat
 }
 
 // MARK: - Helper Extensions
