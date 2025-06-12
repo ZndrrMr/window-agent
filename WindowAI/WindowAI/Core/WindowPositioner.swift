@@ -238,8 +238,24 @@ class WindowPositioner {
         
         // If display is specified, maximize on that display
         if let displayIndex = command.display {
+            print("\n🖥️ MAXIMIZING: \(command.target) on display \(displayIndex)")
+            
+            // Get display info
+            if let displayInfo = windowManager.getDisplayInfo(at: displayIndex) {
+                print("  📱 Display \(displayIndex): \(displayInfo.name)")
+                print("  📐 Full bounds: \(displayInfo.frame)")
+                print("  📐 Visible bounds: \(displayInfo.visibleFrame)")
+            }
+            
             let displayBounds = getVisibleDisplayBounds(displayIndex)
-            let success = windowManager.setWindowBounds(window, bounds: displayBounds)
+            print("  🎯 Setting window bounds to: \(displayBounds)")
+            print("     Origin: (\(displayBounds.origin.x), \(displayBounds.origin.y))")
+            print("     Size: \(displayBounds.size.width) x \(displayBounds.size.height)")
+            
+            // Also log current window position for comparison
+            print("  📍 Current window bounds: \(window.bounds)")
+            
+            let success = windowManager.setWindowBounds(window, bounds: displayBounds, validate: false)
             let message = success ? "Maximized \(command.target) on display \(displayIndex)" : "Failed to maximize \(command.target)"
             return CommandResult(success: success, message: message, command: command)
         } else {

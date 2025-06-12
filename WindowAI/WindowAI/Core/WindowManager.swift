@@ -159,14 +159,14 @@ class WindowManager {
         return result == .success
     }
     
-    func setWindowBounds(_ windowInfo: WindowInfo, bounds: CGRect) -> Bool {
+    func setWindowBounds(_ windowInfo: WindowInfo, bounds: CGRect, validate: Bool = true) -> Bool {
         guard checkAccessibilityPermissions() else { return false }
         
-        // Validate bounds against app constraints and screen bounds
-        let validatedBounds = validateWindowBounds(bounds, for: windowInfo.appName)
+        // Validate bounds against app constraints and screen bounds (unless disabled)
+        let finalBounds = validate ? validateWindowBounds(bounds, for: windowInfo.appName) : bounds
         
-        let positionValue = AXValueCreate(.cgPoint, withUnsafePointer(to: validatedBounds.origin) { $0 })
-        let sizeValue = AXValueCreate(.cgSize, withUnsafePointer(to: validatedBounds.size) { $0 })
+        let positionValue = AXValueCreate(.cgPoint, withUnsafePointer(to: finalBounds.origin) { $0 })
+        let sizeValue = AXValueCreate(.cgSize, withUnsafePointer(to: finalBounds.size) { $0 })
         
         let positionResult = AXUIElementSetAttributeValue(windowInfo.windowRef, kAXPositionAttribute as CFString, positionValue!)
         let sizeResult = AXUIElementSetAttributeValue(windowInfo.windowRef, kAXSizeAttribute as CFString, sizeValue!)
