@@ -8,6 +8,7 @@ class WindowPositioner {
     private let windowManager: WindowManager
     private let constraintsManager = AppConstraintsManager.shared
     private let cascadePositioner: CascadePositioner
+    private let learningService = LearningService.shared
     
     init(windowManager: WindowManager) {
         self.windowManager = windowManager
@@ -123,8 +124,8 @@ class WindowPositioner {
             calculatedSize = CGSize.zero // Will be overridden by custom size
         }
         
-        // Apply app constraints
-        return constraintsManager.validateWindowSize(calculatedSize, for: bundleID)
+        // DYNAMIC SYSTEM: No constraint validation - return calculated size
+        return calculatedSize
     }
     
     // MARK: - Command Implementations
@@ -136,7 +137,10 @@ class WindowPositioner {
         let displayIndex = command.display ?? 0
         var position: CGPoint
         
-        if let customPosition = command.customPosition {
+        // Check if this is a flexible position command
+        if command.position == .precise, let customPosition = command.customPosition {
+            position = customPosition
+        } else if let customPosition = command.customPosition {
             position = customPosition
         } else if let windowPosition = command.position {
             let size = command.customSize ?? window.bounds.size
@@ -144,6 +148,38 @@ class WindowPositioner {
         } else {
             return CommandResult(success: false, message: "No position specified", command: command)
         }
+        
+        // Apply learned position offset if available
+        if let preferredOffset = learningService.getPreferredPositionOffset(for: window.appName) {
+            position.x += preferredOffset.x
+            position.y += preferredOffset.y
+            print("📚 Applying learned position offset for \(window.appName): (\(Int(preferredOffset.x)), \(Int(preferredOffset.y)))")
+        }
+        
+        // Apply flexible positioning if we have both position and size
+        if command.position == .precise, let customSize = command.customSize {
+            let bounds = CGRect(origin: position, size: customSize)
+            
+            // Record this arrangement for learning
+            learningService.recordWindowArrangement(
+                windows: [window],
+                arrangedBounds: [window.appName: bounds],
+                context: "flexible_position"
+            )
+            
+            let success = windowManager.setWindowBounds(window, bounds: bounds)
+            let message = success ? "Positioned \(command.target) at (\(Int(position.x)), \(Int(position.y))) with size \(Int(customSize.width))x\(Int(customSize.height))" : "Failed to position \(command.target)"
+            return CommandResult(success: success, message: message, command: command)
+        }
+        
+        // Record the arrangement for learning
+        let currentBounds = window.bounds
+        let newBounds = CGRect(origin: position, size: currentBounds.size)
+        learningService.recordWindowArrangement(
+            windows: [window],
+            arrangedBounds: [window.appName: newBounds],
+            context: "move_\(command.position?.rawValue ?? "custom")"
+        )
         
         let success = windowManager.moveWindow(window, to: position)
         let message = success ? "Moved \(command.target) to \(position)" : "Failed to move \(command.target)"
@@ -218,6 +254,14 @@ class WindowPositioner {
         print("  📏 Calculated bounds: \(calculatedPosition) size: \(size)")
         
         let bounds = CGRect(origin: calculatedPosition, size: size)
+        
+        // Record the snap arrangement for learning
+        learningService.recordWindowArrangement(
+            windows: [window],
+            arrangedBounds: [window.appName: bounds],
+            context: "snap_\(position.rawValue)_\(sizeType.rawValue)"
+        )
+        
         let success = windowManager.setWindowBounds(window, bounds: bounds)
         
         if success {
@@ -833,33 +877,121 @@ class WindowPositioner {
         let displayIndex = command.display ?? 0
         let screenBounds = getVisibleDisplayBounds(displayIndex)
         
-        // Create user context based on command parameters
-        let userContext = UserContext(
-            activity: command.parameters?["activity"],
-            focusMode: command.parameters?["focus"] == "true"
+        // Determine cascade style from parameters
+        let cascadeStyle: CascadeConfiguration.CascadeStyle
+        switch command.parameters?["style"] {
+        case "intelligent", "smart":
+            cascadeStyle = .smart
+        case "compact", "tight":
+            cascadeStyle = .tight
+        case "spread":
+            cascadeStyle = .spread
+        case "diagonal":
+            cascadeStyle = .diagonal
+        case "fan":
+            cascadeStyle = .fan
+        default:
+            cascadeStyle = .smart
+        }
+        
+        // Create cascade configuration
+        let cascadeConfig = CascadeConfiguration(
+            style: cascadeStyle,
+            offset: cascadeStyle == .tight ? .tight : .standard,
+            priority: command.parameters?["focus"] == "true" ? .primary : .balanced
         )
         
-        // Use intelligent cascade
-        let style: CascadeStyle = command.parameters?["style"] == "compact" ? .compact : .intelligent
-        let arrangements = cascadePositioner.arrangeCascade(
-            windows: windows,
-            style: style,
-            context: userContext,
-            screenBounds: screenBounds,
-            displayIndex: displayIndex
+        // Use FlexibleLayoutEngine to generate focus-aware layout
+        let windowNames = windows.map { $0.appName }
+        
+        print("\n🎯 FOCUS-AWARE LAYOUT:")
+        for appName in windowNames {
+            let archetype = AppArchetypeClassifier.shared.classifyApp(appName)
+            print("  📱 \(appName) → \(archetype.displayName)")
+        }
+        
+        // Extract context from command parameters with intelligent detection
+        let context = command.parameters?["context"] ?? extractContextFromTarget(command.target, userIntent: command.parameters?["user_intent"])
+        
+        // Determine focused app from command parameters or auto-detect
+        let focusedApp = command.parameters?["focus_app"] ?? windows.first?.appName
+        
+        let flexibleArrangements = FlexibleLayoutEngine.generateFocusAwareLayout(
+            for: windowNames,
+            screenSize: screenBounds.size,
+            focusedApp: focusedApp,
+            context: context
         )
         
         var results: [String] = []
+        var arrangedBounds: [String: CGRect] = [:]
         
-        // Apply the arrangements
-        for arrangement in arrangements {
-            if windowManager.setWindowBounds(arrangement.window, bounds: arrangement.targetBounds) {
-                results.append("Cascaded \(arrangement.window.appName) as \(arrangement.role.rawValue)")
+        // Apply the flexible arrangements - match by app name, not index
+        for arrangement in flexibleArrangements {
+            guard let window = windows.first(where: { $0.appName == arrangement.window }) else {
+                print("⚠️ Could not find window for arrangement: \(arrangement.window)")
+                continue
+            }
+            
+            // Convert flexible position/size to pixels
+            let position = CGPoint(
+                x: arrangement.position.x.toPixels(for: screenBounds.width) + screenBounds.origin.x,
+                y: arrangement.position.y.toPixels(for: screenBounds.height) + screenBounds.origin.y
+            )
+            
+            let size = CGSize(
+                width: arrangement.size.width.toPixels(for: screenBounds.width, otherDimension: nil) ?? screenBounds.width * 0.5,
+                height: arrangement.size.height.toPixels(for: screenBounds.height, otherDimension: nil) ?? screenBounds.height * 0.5
+            )
+            
+            let bounds = CGRect(origin: position, size: size)
+            arrangedBounds[window.appName] = bounds
+            
+            if windowManager.setWindowBounds(window, bounds: bounds) {
+                results.append("Cascaded \(window.appName) (\(arrangement.visibility.rawValue) visibility)")
                 
-                // Focus windows in reverse order so primary ends up on top
-                if arrangement.layerIndex == 0 {
+                // Focus windows based on layer (highest layer = most visible = focus last)
+                if arrangement.layer == flexibleArrangements.count - 1 {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        _ = self.windowManager.focusWindow(arrangement.window)
+                        _ = self.windowManager.focusWindow(window)
+                    }
+                }
+            }
+        }
+        
+        // Record the cascade arrangement for learning
+        if !arrangedBounds.isEmpty {
+            learningService.recordWindowArrangement(
+                windows: windows,
+                arrangedBounds: arrangedBounds,
+                context: "cascade_\(cascadeStyle.rawValue)"
+            )
+        }
+        
+        // If we used existing cascade positioner as fallback
+        if results.isEmpty {
+            let userContext = UserContext(
+                activity: command.parameters?["activity"],
+                focusMode: command.parameters?["focus"] == "true"
+            )
+            
+            let style: CascadeStyle = command.parameters?["style"] == "compact" ? .compact : .intelligent
+            let arrangements = cascadePositioner.arrangeCascade(
+                windows: windows,
+                style: style,
+                context: userContext,
+                screenBounds: screenBounds,
+                displayIndex: displayIndex
+            )
+            
+            for arrangement in arrangements {
+                if windowManager.setWindowBounds(arrangement.window, bounds: arrangement.targetBounds) {
+                    results.append("Cascaded \(arrangement.window.appName) as \(arrangement.role.rawValue)")
+                    
+                    if arrangement.layerIndex == 0 {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            _ = self.windowManager.focusWindow(arrangement.window)
+                        }
                     }
                 }
             }
@@ -940,5 +1072,36 @@ class WindowPositioner {
         case .other:
             return CGSize(width: screenSize.width * 0.5, height: screenSize.height * 0.7)
         }
+    }
+    
+    // MARK: - Context Extraction
+    private func extractContextFromTarget(_ target: String, userIntent: String?) -> String {
+        // First check if there's a user intent that gives context clues
+        if let intent = userIntent?.lowercased() {
+            if intent.contains("code") || intent.contains("coding") || intent.contains("develop") || intent.contains("program") {
+                return "coding"
+            } else if intent.contains("design") || intent.contains("create") || intent.contains("art") {
+                return "design"
+            } else if intent.contains("research") || intent.contains("browse") || intent.contains("read") || intent.contains("study") {
+                return "research"
+            } else if intent.contains("write") || intent.contains("document") || intent.contains("note") {
+                return "writing"
+            } else if intent.contains("meet") || intent.contains("call") || intent.contains("video") {
+                return "meeting"
+            }
+        }
+        
+        // Fallback to target analysis
+        let targetLower = target.lowercased()
+        if targetLower.contains("cod") || targetLower.contains("develop") {
+            return "coding"
+        } else if targetLower.contains("design") {
+            return "design"
+        } else if targetLower.contains("research") || targetLower.contains("browse") {
+            return "research"
+        }
+        
+        // Default fallback
+        return "general"
     }
 }
