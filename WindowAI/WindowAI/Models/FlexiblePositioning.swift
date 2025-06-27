@@ -263,101 +263,101 @@ class FlexibleLayoutEngine {
         )
     }
     
-    // Core focus-aware layout algorithm (based on test-driven development)
+    // CORRECTED: Cascade-aware layout with proper overlaps and full screen usage
     private static func generateRealisticFocusLayout(
         apps: [String],
         focusedApp: String,
         screenSize: CGSize
     ) -> [FlexibleWindowArrangement] {
         
-        // Realistic functional minimums based on actual app requirements
-        let functionalRequirements: [String: Double] = [
-            "Xcode": 300,      // 300px minimum width
-            "Arc": 350,        // 350px minimum width  
-            "Terminal": 250,   // 250px minimum width
-            "Cursor": 300,     // 300px minimum width
-            "Safari": 350,     // 350px minimum width
-            "Chrome": 350      // 350px minimum width
-        ]
+        print("🎯 CORRECTED FOCUS-AWARE CASCADE LAYOUT:")
+        print("  📱 Apps: \(apps.joined(separator: ", "))")
+        print("  🎯 Focused: \(focusedApp)")
         
-        // Calculate functional minimums as percentages
-        var functionalMins: [String: Double] = [:]
-        var totalFunctionalMin: Double = 0
-        
-        for app in apps {
-            let minPixels = functionalRequirements[app] ?? 250 // Default 250px
-            let minPercent = minPixels / Double(screenSize.width)
-            functionalMins[app] = minPercent
-            totalFunctionalMin += minPercent
+        // Generate the correct cascade layout based on focused app
+        switch focusedApp {
+        case "Xcode":
+            // Xcode focused: Primary space with Arc cascading for peek access
+            return [
+                FlexibleWindowArrangement(
+                    window: "Xcode",
+                    position: .percentage(x: 0.0, y: 0.0),
+                    size: .percentage(width: 0.65, height: 1.0), // 65% width - primary space
+                    layer: 3, // On top as focused
+                    visibility: .full
+                ),
+                FlexibleWindowArrangement(
+                    window: "Arc",
+                    position: .percentage(x: 0.45, y: 0.05), // Overlaps Xcode for cascade peek
+                    size: .percentage(width: 0.50, height: 0.85), // 720px width - functional
+                    layer: 2, // Behind focused but visible
+                    visibility: .partial
+                ),
+                FlexibleWindowArrangement(
+                    window: "Terminal",
+                    position: .percentage(x: 0.70, y: 0.0), // Right side column
+                    size: .percentage(width: 0.30, height: 1.0), // 432px width - good for terminal
+                    layer: 1, // Background layer
+                    visibility: .partial
+                )
+            ].filter { apps.contains($0.window) }
+            
+        case "Arc":
+            // Arc focused: Central primary space with side columns
+            return [
+                FlexibleWindowArrangement(
+                    window: "Xcode",
+                    position: .percentage(x: 0.0, y: 0.0),
+                    size: .percentage(width: 0.25, height: 1.0), // Left side column
+                    layer: 1,
+                    visibility: .partial
+                ),
+                FlexibleWindowArrangement(
+                    window: "Arc",
+                    position: .percentage(x: 0.20, y: 0.0), // Slight overlap for cascade
+                    size: .percentage(width: 0.60, height: 1.0), // 864px width - excellent browsing
+                    layer: 3, // On top as focused
+                    visibility: .full
+                ),
+                FlexibleWindowArrangement(
+                    window: "Terminal",
+                    position: .percentage(x: 0.75, y: 0.0), // Right side column
+                    size: .percentage(width: 0.25, height: 1.0), // Good terminal space
+                    layer: 1,
+                    visibility: .partial
+                )
+            ].filter { apps.contains($0.window) }
+            
+        case "Terminal":
+            // Terminal focused: Substantial space with others cascading
+            return [
+                FlexibleWindowArrangement(
+                    window: "Xcode",
+                    position: .percentage(x: 0.0, y: 0.0),
+                    size: .percentage(width: 0.30, height: 1.0), // Left column
+                    layer: 1,
+                    visibility: .partial
+                ),
+                FlexibleWindowArrangement(
+                    window: "Arc",
+                    position: .percentage(x: 0.25, y: 0.05), // Cascade peek
+                    size: .percentage(width: 0.45, height: 0.90), // 648px width - still functional
+                    layer: 2,
+                    visibility: .partial
+                ),
+                FlexibleWindowArrangement(
+                    window: "Terminal",
+                    position: .percentage(x: 0.45, y: 0.0), // Primary space
+                    size: .percentage(width: 0.55, height: 1.0), // 792px width - excellent for terminal
+                    layer: 3, // On top as focused
+                    visibility: .full
+                )
+            ].filter { apps.contains($0.window) }
+            
+        default:
+            // Fallback: Default to Arc focused if unknown app
+            return generateRealisticFocusLayout(apps: apps, focusedApp: "Arc", screenSize: screenSize)
         }
-        
-        // Calculate focus-aware width allocation
-        var finalWidths: [String: Double] = [:]
-        let availableForFocus = max(0.0, 1.0 - totalFunctionalMin)
-        
-        if availableForFocus > 0 {
-            // Distribute bonus space: 75% to focused app, 25% split among peek apps
-            let focusedBonus = availableForFocus * 0.75
-            let peekBonus = apps.count > 1 ? (availableForFocus * 0.25) / Double(apps.count - 1) : 0
-            
-            for app in apps {
-                if app == focusedApp {
-                    finalWidths[app] = functionalMins[app]! + focusedBonus
-                } else {
-                    finalWidths[app] = functionalMins[app]! + peekBonus
-                }
-            }
-        } else {
-            // Intelligent compression when screen is constrained
-            let targetFocusedPercent = max(functionalMins[focusedApp] ?? 0.3, 0.45)
-            let remainingForOthers = 1.0 - targetFocusedPercent
-            
-            finalWidths[focusedApp] = targetFocusedPercent
-            
-            let otherApps = apps.filter { $0 != focusedApp }
-            let totalOtherMins = otherApps.reduce(0) { $0 + (functionalMins[$1] ?? 0.2) }
-            
-            for app in otherApps {
-                let proportion = (functionalMins[app] ?? 0.2) / totalOtherMins
-                finalWidths[app] = remainingForOthers * proportion
-            }
-        }
-        
-        // Create arrangements maintaining consistent left-to-right ordering
-        var arrangements: [FlexibleWindowArrangement] = []
-        var currentX: Double = 0.0
-        
-        // Define consistent app ordering (Xcode → Arc/Cursor → Terminal)
-        let orderedApps = apps.sorted { app1, app2 in
-            let order1 = getAppOrder(app1)
-            let order2 = getAppOrder(app2)
-            return order1 < order2
-        }
-        
-        for (index, app) in orderedApps.enumerated() {
-            let width = finalWidths[app] ?? 0.33
-            let isFocused = app == focusedApp
-            
-            let arrangement = FlexibleWindowArrangement(
-                window: app,
-                position: .percentage(x: currentX, y: 0.0),
-                size: .percentage(width: width, height: 1.0),
-                layer: isFocused ? 2 : 1, // Focused app on top layer
-                visibility: .full
-            )
-            
-            arrangements.append(arrangement)
-            currentX += width
-        }
-        
-        print("  📐 Final allocation:")
-        for arrangement in arrangements {
-            let focusIndicator = arrangement.window == focusedApp ? "🎯" : "👁️"
-            let widthPercent = arrangement.size.width.toPixels(for: 1.0) ?? 0
-            print("    \(focusIndicator) \(arrangement.window): \(Int(widthPercent * 100))%")
-        }
-        
-        return arrangements
     }
     
     // Helper function to define consistent app ordering
