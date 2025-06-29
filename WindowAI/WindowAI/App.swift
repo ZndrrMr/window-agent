@@ -27,6 +27,11 @@ class WindowAIController: HotkeyManagerDelegate, LLMServiceDelegate {
     private var isProcessingCommand = false
     
     init() {
+        // DEVELOPMENT: Enable debug mode to bypass subscription limits
+        preferences.debugMode = true
+        subscriptionService.resetUsageForDevelopment()
+        print("🔧 DEVELOPMENT MODE ENABLED - No subscription limits")
+        
         setupApplication()
         setupComponents()
         setupNotifications()

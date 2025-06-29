@@ -150,9 +150,8 @@ class WindowManager {
     func resizeWindow(_ windowInfo: WindowInfo, to size: CGSize) -> Bool {
         guard checkAccessibilityPermissions() else { return false }
         
-        // Validate size against app constraints
-        let bundleID = getBundleID(for: windowInfo.appName) ?? ""
-        let validatedSize = AppConstraintsManager.shared.validateWindowSize(size, for: bundleID)
+        // DYNAMIC SYSTEM: No constraint validation - use size as calculated
+        let validatedSize = size
         
         let sizeValue = AXValueCreate(.cgSize, withUnsafePointer(to: validatedSize) { $0 })
         let result = AXUIElementSetAttributeValue(windowInfo.windowRef, kAXSizeAttribute as CFString, sizeValue!)
@@ -172,11 +171,11 @@ class WindowManager {
         let positionValue = AXValueCreate(.cgPoint, withUnsafePointer(to: finalBounds.origin) { $0 })
         let sizeValue = AXValueCreate(.cgSize, withUnsafePointer(to: finalBounds.size) { $0 })
         
-        print("    📍 Setting position to: \(finalBounds.origin)")
+        print("    📍 Setting position to: \(finalBounds.origin) for \(windowInfo.appName)")
         let positionResult = AXUIElementSetAttributeValue(windowInfo.windowRef, kAXPositionAttribute as CFString, positionValue!)
         print("    🎯 Position result: \(positionResult == .success ? "✅ Success" : "❌ Failed with error \(positionResult.rawValue)")")
         
-        print("    📐 Setting size to: \(finalBounds.size)")
+        print("    📐 Setting size to: \(finalBounds.size) for \(windowInfo.appName)")
         let sizeResult = AXUIElementSetAttributeValue(windowInfo.windowRef, kAXSizeAttribute as CFString, sizeValue!)
         print("    🎯 Size result: \(sizeResult == .success ? "✅ Success" : "❌ Failed with error \(sizeResult.rawValue)")")
         
@@ -267,12 +266,12 @@ class WindowManager {
         let sizeValue = AXValueCreate(.cgSize, withUnsafePointer(to: maximizeBounds.size) { $0 })
         
         // First set the position
-        print("  📍 Setting position to: \(maximizeBounds.origin)")
+        print("  📍 Setting position to: \(maximizeBounds.origin) for \(windowInfo.appName)")
         let posResult = AXUIElementSetAttributeValue(windowInfo.windowRef, kAXPositionAttribute as CFString, positionValue!)
         print("    Position result: \(posResult == .success ? "✅" : "❌ \(posResult.rawValue)")")
         
         // Then set the size
-        print("  📐 Setting size to: \(maximizeBounds.size)")
+        print("  📐 Setting size to: \(maximizeBounds.size) for \(windowInfo.appName)")
         let sizeResult = AXUIElementSetAttributeValue(windowInfo.windowRef, kAXSizeAttribute as CFString, sizeValue!)
         print("    Size result: \(sizeResult == .success ? "✅" : "❌ \(sizeResult.rawValue)")")
         
@@ -512,8 +511,8 @@ extension WindowManager {
     }
     
     private func validateWindowBounds(_ bounds: CGRect, for appName: String) -> CGRect {
-        let bundleID = getBundleID(for: appName) ?? ""
-        let validatedSize = AppConstraintsManager.shared.validateWindowSize(bounds.size, for: bundleID)
+        // DYNAMIC SYSTEM: No constraint validation - use bounds as calculated
+        let validatedSize = bounds.size
         
         // Ensure window stays within screen bounds
         let screenBounds = getVisibleScreenBounds(for: bounds.origin)

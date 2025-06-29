@@ -279,9 +279,8 @@ class CascadePositioner {
             )
         }
         
-        // Apply app constraints
-        let bundleID = getBundleID(for: window.appName) ?? ""
-        size = constraintsManager.validateWindowSize(size, for: bundleID)
+        // DYNAMIC SYSTEM: No constraint validation - use calculated size
+        // size = size (no changes needed)
         
         // Calculate cascade position
         let cascadeStep = min(index, cascadeParams.maxCascadeSteps - 1)

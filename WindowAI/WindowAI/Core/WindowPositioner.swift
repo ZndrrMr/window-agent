@@ -303,8 +303,8 @@ class WindowPositioner {
             let position = CGPoint(x: displayBounds.minX, y: displayBounds.minY)
             let size = displayBounds.size
             
-            print("  📍 Setting position to: \(position)")
-            print("  📐 Setting size to: \(size)")
+            print("  📍 Setting position to: \(position) for \(command.target)")
+            print("  📐 Setting size to: \(size) for \(command.target)")
             
             // Create a window-sized rect at the correct position
             let targetBounds = CGRect(origin: position, size: size)
@@ -913,8 +913,21 @@ class WindowPositioner {
         // Extract context from command parameters with intelligent detection
         let context = command.parameters?["context"] ?? extractContextFromTarget(command.target, userIntent: command.parameters?["user_intent"])
         
-        // Determine focused app from command parameters or auto-detect
-        let focusedApp = command.parameters?["focus_app"] ?? windows.first?.appName
+        print("  📝 Context: '\(context)'")
+        print("  🎯 User intent: '\(command.parameters?["user_intent"] ?? "none")'")
+        
+        // Determine focused app from command parameters or auto-detect based on context
+        let focusedApp: String?
+        if let explicitFocus = command.parameters?["focus_app"] {
+            focusedApp = explicitFocus
+        } else {
+            // Smart focus detection based on context and archetype priorities
+            focusedApp = intelligentlySelectFocusedApp(
+                windows: windowNames,
+                context: context,
+                userIntent: command.parameters?["user_intent"]
+            )
+        }
         
         let flexibleArrangements = FlexibleLayoutEngine.generateFocusAwareLayout(
             for: windowNames,
@@ -1071,6 +1084,83 @@ class WindowPositioner {
             return CGSize(width: screenSize.width * 0.8, height: screenSize.height * 0.8)
         case .other:
             return CGSize(width: screenSize.width * 0.5, height: screenSize.height * 0.7)
+        }
+    }
+    
+    // MARK: - Intelligent Focus Selection
+    private func intelligentlySelectFocusedApp(windows: [String], context: String, userIntent: String?) -> String? {
+        let classifier = AppArchetypeClassifier.shared
+        
+        // Map each app to its archetype
+        let appArchetypes = windows.map { app in
+            (app: app, archetype: classifier.classifyApp(app))
+        }
+        
+        print("  🔍 Focus resolution for context '\(context)':")
+        
+        // Sort apps by context-specific priority
+        let sortedApps = appArchetypes.sorted { (app1, app2) in
+            let priority1 = getContextSpecificPriority(app1.archetype, context: context)
+            let priority2 = getContextSpecificPriority(app2.archetype, context: context)
+            
+            print("    📱 \(app1.app): \(app1.archetype.rawValue) (priority \(priority1))")
+            print("    📱 \(app2.app): \(app2.archetype.rawValue) (priority \(priority2))")
+            
+            return priority1 < priority2 // Lower number = higher priority
+        }
+        
+        let focusedApp = sortedApps.first?.app
+        print("  🎯 Focus resolved to: \(focusedApp ?? "none")")
+        
+        return focusedApp
+    }
+    
+    private func getContextSpecificPriority(_ archetype: AppArchetype, context: String) -> Int {
+        switch context {
+        case "coding", "develop", "program":
+            switch archetype {
+            case .codeWorkspace: return 1    // Highest priority for coding
+            case .contentCanvas: return 2    // Documentation/browsers
+            case .textStream: return 3       // Terminal support
+            case .glanceableMonitor: return 4
+            case .unknown: return 5
+            }
+            
+        case "design", "create":
+            switch archetype {
+            case .contentCanvas: return 1    // Design tools priority
+            case .codeWorkspace: return 2
+            case .textStream: return 3
+            case .glanceableMonitor: return 4
+            case .unknown: return 5
+            }
+            
+        case "research", "browse", "study":
+            switch archetype {
+            case .contentCanvas: return 1    // Browsers priority
+            case .textStream: return 2       // Note-taking
+            case .codeWorkspace: return 3
+            case .glanceableMonitor: return 4
+            case .unknown: return 5
+            }
+            
+        case "communication", "chat", "meeting":
+            switch archetype {
+            case .textStream: return 1       // Chat apps priority
+            case .contentCanvas: return 2
+            case .glanceableMonitor: return 3
+            case .codeWorkspace: return 4
+            case .unknown: return 5
+            }
+            
+        default: // "general" or unknown contexts
+            switch archetype {
+            case .contentCanvas: return 1
+            case .codeWorkspace: return 2
+            case .textStream: return 3
+            case .glanceableMonitor: return 4
+            case .unknown: return 5
+            }
         }
     }
     

@@ -309,6 +309,20 @@ func updateAppPreferences(feedback: UserFeedback) {
    - Optimize performance
    - Enhance error handling
 
+## CRITICAL RULES - NEVER VIOLATE
+
+### NO HARDCODED CONSTRAINTS EVER
+**NEVER** use pixel minimums, maximums, or any fixed constraints in window sizing:
+- ❌ `min(0.30, max(0.20, 600.0 / screenSize.width))` 
+- ❌ `max(0.45, 800.0 / screenSize.width)`
+- ❌ Any `minWidth`, `maxWidth`, pixel limits
+- ❌ Fixed pixel calculations like "480px minimum"
+- ✅ Pure percentage-based dynamic calculations only
+- ✅ Window count and screen size adaptation
+- ✅ Archetype behavior-based sizing
+
+The system must be **100% dynamic** with **NO hardcoded rules**. Use window count, screen ratios, and archetype behavior to calculate sizes, never fixed pixel constraints.
+
 ## Development Guidelines
 
 ### Code Patterns

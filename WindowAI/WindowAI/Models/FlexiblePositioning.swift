@@ -245,9 +245,25 @@ class FlexibleLayoutEngine {
         if let focused = focusedApp, relevantApps.contains(focused) {
             actualFocusedApp = focused
         } else {
-            // Auto-detect: prioritize code workspace in coding context, or first app
+            // Auto-detect: prioritize by archetype priority for context
             if context.contains("cod") {
-                actualFocusedApp = relevantApps.first { AppArchetypeClassifier.shared.classifyApp($0) == .codeWorkspace } ?? relevantApps.first ?? ""
+                // Sort apps by coding context priority (codeWorkspace > contentCanvas > textStream > glanceableMonitor)
+                print("  🔍 DEBUG: Focus resolution for coding context:")
+                for app in relevantApps {
+                    let archetype = AppArchetypeClassifier.shared.classifyApp(app)
+                    let priority = getCodingContextPriority(archetype)
+                    print("    📱 \(app): \(archetype.rawValue) (priority \(priority))")
+                }
+                
+                let sortedByPriority = relevantApps.sorted { app1, app2 in
+                    let archetype1 = AppArchetypeClassifier.shared.classifyApp(app1)
+                    let archetype2 = AppArchetypeClassifier.shared.classifyApp(app2)
+                    let priority1 = getCodingContextPriority(archetype1)
+                    let priority2 = getCodingContextPriority(archetype2)
+                    return priority1 < priority2
+                }
+                print("  🎯 Sorted by priority: \(sortedByPriority)")
+                actualFocusedApp = sortedByPriority.first ?? ""
             } else {
                 actualFocusedApp = relevantApps.first ?? ""
             }
@@ -263,115 +279,276 @@ class FlexibleLayoutEngine {
         )
     }
     
-    // CORRECTED: Cascade-aware layout with proper overlaps and full screen usage
+    // ARCHETYPE-BASED: Dynamic cascade layout that works with ANY apps
     private static func generateRealisticFocusLayout(
         apps: [String],
         focusedApp: String,
         screenSize: CGSize
     ) -> [FlexibleWindowArrangement] {
         
-        print("🎯 CORRECTED FOCUS-AWARE CASCADE LAYOUT:")
+        print("🎯 ARCHETYPE-BASED CASCADE LAYOUT:")
         print("  📱 Apps: \(apps.joined(separator: ", "))")
         print("  🎯 Focused: \(focusedApp)")
         
-        // Generate the correct cascade layout based on focused app
-        switch focusedApp {
-        case "Xcode":
-            // Xcode focused: Primary space with Arc cascading for peek access
-            return [
-                FlexibleWindowArrangement(
-                    window: "Xcode",
-                    position: .percentage(x: 0.0, y: 0.0),
-                    size: .percentage(width: 0.65, height: 1.0), // 65% width - primary space
-                    layer: 3, // On top as focused
-                    visibility: .full
-                ),
-                FlexibleWindowArrangement(
-                    window: "Arc",
-                    position: .percentage(x: 0.45, y: 0.05), // Overlaps Xcode for cascade peek
-                    size: .percentage(width: 0.50, height: 0.85), // 720px width - functional
-                    layer: 2, // Behind focused but visible
-                    visibility: .partial
-                ),
-                FlexibleWindowArrangement(
-                    window: "Terminal",
-                    position: .percentage(x: 0.70, y: 0.0), // Right side column
-                    size: .percentage(width: 0.30, height: 1.0), // 432px width - good for terminal
-                    layer: 1, // Background layer
-                    visibility: .partial
-                )
-            ].filter { apps.contains($0.window) }
+        // Step 1: Classify all apps by archetype
+        let classifier = AppArchetypeClassifier.shared
+        var appArchetypes: [(app: String, archetype: AppArchetype)] = []
+        for app in apps {
+            let archetype = classifier.classifyApp(app)
+            appArchetypes.append((app, archetype))
+            print("  📱 \(app) → \(archetype.displayName)")
+        }
+        
+        // Step 2: Get focused app archetype
+        let focusedArchetype = classifier.classifyApp(focusedApp)
+        print("  🎯 Focused archetype: \(focusedArchetype.displayName)")
+        
+        // Step 3: Sort apps into layout roles based on archetypes
+        var primaryApp: String? = nil
+        var sideColumnApps: [String] = []
+        var cascadeApps: [String] = []
+        var cornerApps: [String] = []
+        
+        // Assign roles based on archetype and focus
+        for (app, archetype) in appArchetypes {
+            if app == focusedApp {
+                primaryApp = app
+            } else {
+                switch archetype {
+                case .textStream:
+                    sideColumnApps.append(app)
+                case .contentCanvas:
+                    cascadeApps.append(app)
+                case .codeWorkspace:
+                    if app != focusedApp {
+                        cascadeApps.append(app)
+                    }
+                case .glanceableMonitor:
+                    cornerApps.append(app)
+                case .unknown:
+                    cascadeApps.append(app)
+                }
+            }
+        }
+        
+        // Step 4: Build layout based on focused archetype pattern
+        var arrangements: [FlexibleWindowArrangement] = []
+        
+        // Add focused app first (always on top)
+        if let primary = primaryApp {
+            let primarySize = getPrimarySize(for: focusedArchetype, appCount: apps.count)
+            let primaryPosition = getPrimaryPosition(for: focusedArchetype)
             
-        case "Arc":
-            // Arc focused: Central primary space with side columns
-            return [
-                FlexibleWindowArrangement(
-                    window: "Xcode",
-                    position: .percentage(x: 0.0, y: 0.0),
-                    size: .percentage(width: 0.25, height: 1.0), // Left side column
-                    layer: 1,
-                    visibility: .partial
-                ),
-                FlexibleWindowArrangement(
-                    window: "Arc",
-                    position: .percentage(x: 0.20, y: 0.0), // Slight overlap for cascade
-                    size: .percentage(width: 0.60, height: 1.0), // 864px width - excellent browsing
-                    layer: 3, // On top as focused
-                    visibility: .full
-                ),
-                FlexibleWindowArrangement(
-                    window: "Terminal",
-                    position: .percentage(x: 0.75, y: 0.0), // Right side column
-                    size: .percentage(width: 0.25, height: 1.0), // Good terminal space
-                    layer: 1,
-                    visibility: .partial
-                )
-            ].filter { apps.contains($0.window) }
+            arrangements.append(FlexibleWindowArrangement(
+                window: primary,
+                position: primaryPosition,
+                size: primarySize,
+                layer: 3, // Always on top
+                visibility: .full
+            ))
+        }
+        
+        // Add side column apps (text streams)
+        var sideColumnIndex = 0
+        for sideApp in sideColumnApps {
+            let position = getSideColumnPosition(index: sideColumnIndex, total: sideColumnApps.count)
+            let size = getSideColumnSize(for: .textStream, isFocused: sideApp == focusedApp)
             
-        case "Terminal":
-            // Terminal focused: Substantial space with others cascading
-            return [
-                FlexibleWindowArrangement(
-                    window: "Xcode",
-                    position: .percentage(x: 0.0, y: 0.0),
-                    size: .percentage(width: 0.30, height: 1.0), // Left column
-                    layer: 1,
-                    visibility: .partial
-                ),
-                FlexibleWindowArrangement(
-                    window: "Arc",
-                    position: .percentage(x: 0.25, y: 0.05), // Cascade peek
-                    size: .percentage(width: 0.45, height: 0.90), // 648px width - still functional
-                    layer: 2,
-                    visibility: .partial
-                ),
-                FlexibleWindowArrangement(
-                    window: "Terminal",
-                    position: .percentage(x: 0.45, y: 0.0), // Primary space
-                    size: .percentage(width: 0.55, height: 1.0), // 792px width - excellent for terminal
-                    layer: 3, // On top as focused
-                    visibility: .full
-                )
-            ].filter { apps.contains($0.window) }
+            arrangements.append(FlexibleWindowArrangement(
+                window: sideApp,
+                position: position,
+                size: size,
+                layer: sideApp == focusedApp ? 3 : 1,
+                visibility: sideApp == focusedApp ? .full : .partial
+            ))
+            sideColumnIndex += 1
+        }
+        
+        // Add cascade apps (content canvas, other code workspaces)
+        var cascadeIndex = 0
+        for cascadeApp in cascadeApps {
+            let archetype = classifier.classifyApp(cascadeApp)
+            let position = getCascadePosition(
+                index: cascadeIndex,
+                total: cascadeApps.count,
+                focusedArchetype: focusedArchetype,
+                hasSideColumns: !sideColumnApps.isEmpty
+            )
+            let size = getCascadeSize(
+                for: archetype,
+                isFocused: cascadeApp == focusedApp,
+                focusedArchetype: focusedArchetype
+            )
             
-        default:
-            // Fallback: Default to Arc focused if unknown app
-            return generateRealisticFocusLayout(apps: apps, focusedApp: "Arc", screenSize: screenSize)
+            arrangements.append(FlexibleWindowArrangement(
+                window: cascadeApp,
+                position: position,
+                size: size,
+                layer: cascadeApp == focusedApp ? 3 : 2,
+                visibility: cascadeApp == focusedApp ? .full : .partial
+            ))
+            cascadeIndex += 1
+        }
+        
+        // Add corner apps (monitors)
+        var cornerIndex = 0
+        for cornerApp in cornerApps {
+            let position = getCornerPosition(index: cornerIndex)
+            
+            arrangements.append(FlexibleWindowArrangement(
+                window: cornerApp,
+                position: position,
+                size: .percentage(width: 0.15, height: 0.15),
+                layer: 0,
+                visibility: .minimal
+            ))
+            cornerIndex += 1
+        }
+        
+        return arrangements
+    }
+    
+    // MARK: - Dynamic Sizing Functions
+    
+    private static func getPrimarySize(for archetype: AppArchetype, appCount: Int) -> FlexibleSize {
+        switch archetype {
+        case .codeWorkspace:
+            // IDEs need more space, scale down with more apps
+            let width = appCount <= 2 ? 0.70 : appCount == 3 ? 0.55 : 0.50
+            let height = appCount <= 2 ? 0.90 : 0.85
+            return .percentage(width: width, height: height)
+            
+        case .contentCanvas:
+            // Browsers/design tools need good width
+            let width = appCount <= 2 ? 0.65 : appCount == 3 ? 0.55 : 0.50
+            let height = 0.90
+            return .percentage(width: width, height: height)
+            
+        case .textStream:
+            // Text streams as primary (e.g., focused Terminal)
+            let width = min(0.30, 500.0 / 1440.0) // Max 30% or 500px
+            let height = 1.0
+            return .percentage(width: width, height: height)
+            
+        case .glanceableMonitor:
+            // Monitors rarely primary, but if so, small window
+            return .percentage(width: 0.30, height: 0.40)
+            
+        case .unknown:
+            // Default to content canvas sizing
+            return .percentage(width: 0.55, height: 0.85)
         }
     }
     
-    // Helper function to define consistent app ordering
-    private static func getAppOrder(_ appName: String) -> Int {
-        let normalizedName = appName.lowercased()
-        if normalizedName.contains("xcode") { return 0 }
-        if normalizedName.contains("cursor") { return 1 }
-        if normalizedName.contains("arc") { return 2 }
-        if normalizedName.contains("safari") { return 2 }
-        if normalizedName.contains("chrome") { return 2 }
-        if normalizedName.contains("terminal") { return 3 }
-        if normalizedName.contains("iterm") { return 3 }
-        return 5 // Unknown apps go to the right
+    private static func getPrimaryPosition(for archetype: AppArchetype) -> FlexiblePosition {
+        switch archetype {
+        case .textStream:
+            // Text streams as primary go to the right
+            return .percentage(x: 0.70, y: 0.0)
+        case .glanceableMonitor:
+            // Monitors in corner
+            return .percentage(x: 0.70, y: 0.60)
+        default:
+            // Most apps start at origin
+            return .percentage(x: 0.0, y: 0.0)
+        }
     }
+    
+    private static func getSideColumnPosition(index: Int, total: Int) -> FlexiblePosition {
+        // Side columns go to the right edge
+        let x = index == 0 ? 0.75 : 0.70 - (Double(index) * 0.05)
+        return .percentage(x: x, y: 0.0)
+    }
+    
+    private static func getSideColumnSize(for archetype: AppArchetype, isFocused: Bool) -> FlexibleSize {
+        // Text streams get consistent narrow width
+        let width = isFocused ? 0.30 : 0.25
+        let height = isFocused ? 1.0 : 0.85
+        return .percentage(width: width, height: height)
+    }
+    
+    private static func getCascadePosition(
+        index: Int,
+        total: Int,
+        focusedArchetype: AppArchetype,
+        hasSideColumns: Bool
+    ) -> FlexiblePosition {
+        // Dynamic cascade positioning based on context
+        let baseX: Double
+        let baseY: Double
+        
+        switch focusedArchetype {
+        case .codeWorkspace:
+            // When IDE is focused, cascade from right side
+            baseX = 0.45
+            baseY = 0.10
+        case .contentCanvas:
+            // When browser is focused, cascade from left
+            baseX = 0.20
+            baseY = 0.05
+        case .textStream:
+            // When terminal is focused, cascade in center
+            baseX = 0.35
+            baseY = 0.10
+        default:
+            baseX = 0.30
+            baseY = 0.10
+        }
+        
+        // Apply cascade offset based on index
+        let offsetX = Double(index) * 0.15
+        let offsetY = Double(index) * 0.15
+        
+        return .percentage(
+            x: min(baseX + offsetX, 0.60),
+            y: min(baseY + offsetY, 0.50)
+        )
+    }
+    
+    private static func getCascadeSize(
+        for archetype: AppArchetype,
+        isFocused: Bool,
+        focusedArchetype: AppArchetype
+    ) -> FlexibleSize {
+        if isFocused {
+            return getPrimarySize(for: archetype, appCount: 3)
+        }
+        
+        // Non-focused cascade apps
+        switch archetype {
+        case .contentCanvas:
+            // Browsers need minimum functional width
+            return .percentage(width: 0.35, height: 0.80)
+        case .codeWorkspace:
+            // Secondary IDEs
+            return .percentage(width: 0.40, height: 0.80)
+        default:
+            return .percentage(width: 0.35, height: 0.75)
+        }
+    }
+    
+    private static func getCornerPosition(index: Int) -> FlexiblePosition {
+        let positions = [
+            (x: 0.80, y: 0.80), // Bottom right
+            (x: 0.05, y: 0.80), // Bottom left
+            (x: 0.80, y: 0.05), // Top right
+            (x: 0.05, y: 0.05)  // Top left
+        ]
+        let pos = positions[min(index, positions.count - 1)]
+        return .percentage(x: pos.x, y: pos.y)
+    }
+    
+    // Context-aware priority system for focus resolution
+    private static func getCodingContextPriority(_ archetype: AppArchetype) -> Int {
+        switch archetype {
+        case .codeWorkspace: return 1    // Highest priority (IDEs, editors)
+        case .contentCanvas: return 2    // Documentation, browsers
+        case .textStream: return 3       // Terminal, logs, supporting tools
+        case .glanceableMonitor: return 4 // Background monitors
+        case .unknown: return 5          // Lowest priority
+        }
+    }
+    
     
     // Calculate optimal position based on role and archetype
     private static func calculateOptimalPosition(for role: CascadeRole, archetype: AppArchetype, screenSize: CGSize) -> FlexiblePosition {

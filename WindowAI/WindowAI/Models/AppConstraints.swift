@@ -198,8 +198,8 @@ class AppConstraintsManager {
             optimalSize = CGSize(width: screenSize.width * 0.6, height: screenSize.height * 0.7)
         }
         
-        // Apply constraints
-        return validateWindowSize(optimalSize, for: bundleID)
+        // DYNAMIC SYSTEM: No constraint validation - return optimal size
+        return optimalSize
     }
     
     // MARK: - Built-in Constraints Database

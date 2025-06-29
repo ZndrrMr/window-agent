@@ -53,6 +53,11 @@ class SubscriptionService {
     func canMakeRequest() -> Bool {
         resetUsageIfNeeded()
         
+        // DEVELOPMENT OVERRIDE - Remove this before production!
+        if preferences.debugMode {
+            return true  // No limits in debug mode
+        }
+        
         let limit = preferences.subscriptionStatus.monthlyLimit
         return limit == -1 || monthlyUsage < limit
     }
@@ -73,6 +78,14 @@ class SubscriptionService {
     func getRemainingRequests() -> Int {
         let limit = preferences.subscriptionStatus.monthlyLimit
         return limit == -1 ? -1 : max(0, limit - monthlyUsage)
+    }
+    
+    // DEVELOPMENT HELPER - Remove before production!
+    func resetUsageForDevelopment() {
+        monthlyUsage = 0
+        lastUsageReset = Date()
+        saveUsageData()
+        print("🔧 DEVELOPMENT: Usage counter reset to 0")
     }
     
     func getUsagePercentage() -> Double {

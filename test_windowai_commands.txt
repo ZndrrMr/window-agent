@@ -1,0 +1,101 @@
+🧪 WINDOWAI CASCADE LAYOUT TESTING GUIDE
+=======================================
+
+The WindowAI cascade layout system has been completely overhauled to be truly dynamic and archetype-based.
+Here are various commands to test with the running WindowAI app:
+
+CODING CONTEXTS (Focus should go to IDE)
+----------------------------------------
+1. "i want to code"
+   - Expected: Xcode/Cursor/VS Code gets focus and primary position
+   - Terminal gets ≤30% width on the right
+   - Browser cascades with proper overlap
+
+2. "let me develop a python script"
+   - Works with ANY IDE (not just Xcode)
+   - Should focus the code editor, not Terminal
+
+3. "time to program in swift"
+   - Archetype-based: any .codeWorkspace app gets priority
+
+DESIGN CONTEXTS (Focus should go to design tool)
+------------------------------------------------
+4. "let's design a new interface"
+   - Figma/Sketch gets focus and primary position
+   - Browser cascades for reference
+   - Chat apps as side columns if present
+
+5. "create some mockups"
+   - Design tool takes primary space
+   - Supporting apps cascade appropriately
+
+RESEARCH CONTEXTS (Focus should go to browser)
+----------------------------------------------
+6. "research machine learning papers"
+   - Browser gets focus and primary position
+   - Note-taking app cascades
+   - Terminal as side column if needed
+
+7. "browse documentation for react"
+   - Browser-centric layout
+   - Code editor cascades if present
+
+COMMUNICATION CONTEXTS (Focus should go to chat)
+-----------------------------------------------
+8. "collaborate on slack"
+   - Slack/Discord gets focus
+   - Browser for reference
+   - Other apps minimize or side column
+
+9. "join the team meeting"
+   - Video app gets primary focus
+   - Chat as side support
+
+TESTING DIFFERENT APP COMBINATIONS
+----------------------------------
+The system now works with ANY apps, not hardcoded names:
+
+10. IntelliJ IDEA + Firefox + iTerm2
+11. VS Code + Chrome + Warp
+12. Cursor + Brave + Hyper
+13. WebStorm + Safari + Console
+14. Sublime Text + Edge + Terminal
+
+KEY IMPROVEMENTS TO OBSERVE
+---------------------------
+✅ NO HARDCODING: Works with any app combination
+✅ ARCHETYPE-BASED: Apps classified by behavior, not name
+✅ CONTEXT-AWARE: Focus goes to the right app type
+✅ PROPER SIZING: Terminal ≤30%, browsers ≥35%
+✅ CASCADE OVERLAP: Apps peek out, no wasted space
+✅ DYNAMIC POSITIONS: Based on focused archetype
+
+DEBUG OUTPUT TO WATCH FOR
+-------------------------
+When you run commands, you'll see:
+
+🎯 ARCHETYPE-BASED CASCADE LAYOUT:
+  📱 Apps: Terminal, Arc, Xcode
+  📱 Terminal → Text Stream
+  📱 Arc → Content Canvas
+  📱 Xcode → Code Workspace
+  🎯 Focused archetype: Code Workspace
+  📝 Context: 'coding'
+  🎯 User intent: 'i want to code'
+  🔍 Focus resolution for context 'coding':
+    📱 Terminal: text_stream (priority 3)
+    📱 Arc: content_canvas (priority 2)
+    📱 Xcode: code_workspace (priority 1)
+  🎯 Focus resolved to: Xcode
+
+This shows the intelligent focus resolution working correctly!
+
+TROUBLESHOOTING
+---------------
+If layouts still seem wrong:
+1. Check that WindowAI app is using the latest build
+2. Ensure the LLM is receiving the user_intent parameter
+3. Watch the debug output for focus resolution
+4. Verify apps are being classified correctly by archetype
+
+The cascade system is now truly intelligent and adaptable!

@@ -94,7 +94,8 @@ class WindowManagementTools {
         minimizeWindowTool,
         maximizeWindowTool,
         cascadeWindowsTool,
-        tileWindowsTool
+        tileWindowsTool,
+        flexiblePositionTool
     ]
     
     // Move window to specific position
@@ -301,8 +302,8 @@ class WindowManagementTools {
     
     // Cascade windows
     static let cascadeWindowsTool = LLMTool(
-        name: "cascade_windows",
-        description: "Arrange windows in a cascade layout with intelligent overlapping for better visibility",
+        name: "cascade_windows", 
+        description: "PREFERRED for multi-app scenarios: Arrange windows using intelligent archetype-based cascade that keeps all apps accessible. Automatically classifies apps (Terminal=side column, Browser=peek layer, IDE=primary, etc.) and positions them so nothing gets buried.",
         input_schema: LLMTool.ToolInputSchema(
             properties: [
                 "target": LLMTool.ToolInputSchema.PropertyDefinition(
@@ -321,6 +322,10 @@ class WindowManagementTools {
                 "display": LLMTool.ToolInputSchema.PropertyDefinition(
                     type: "integer",
                     description: "Display index to cascade windows on (0 for main display, 1 for second display, etc.). If omitted, cascades on the display with most windows"
+                ),
+                "user_intent": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "string",
+                    description: "The original user command to help determine context (e.g., 'i want to code' helps identify this as a coding workspace)"
                 )
             ],
             required: ["target"]
@@ -348,6 +353,41 @@ class WindowManagementTools {
                 )
             ],
             required: ["target"]
+        )
+    )
+    
+    // Flexible positioning with pixel-level precision
+    static let flexiblePositionTool = LLMTool(
+        name: "flexible_position",
+        description: "Position and size a window with precise percentage or pixel values. Use this for custom positioning beyond standard layouts.",
+        input_schema: LLMTool.ToolInputSchema(
+            properties: [
+                "app_name": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "string",
+                    description: "Name of the application to position"
+                ),
+                "x_position": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "string",
+                    description: "X position as percentage (e.g., '25' for 25% from left) or pixels (e.g., '300px')"
+                ),
+                "y_position": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "string",
+                    description: "Y position as percentage (e.g., '10' for 10% from top) or pixels (e.g., '50px')"
+                ),
+                "width": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "string",
+                    description: "Width as percentage (e.g., '65' for 65% of screen) or pixels (e.g., '800px')"
+                ),
+                "height": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "string",
+                    description: "Height as percentage (e.g., '75' for 75% of screen) or pixels (e.g., '600px')"
+                ),
+                "display": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "integer",
+                    description: "Display index (0 for main display, 1 for secondary, etc.). Optional."
+                )
+            ],
+            required: ["app_name", "x_position", "y_position", "width", "height"]
         )
     )
 }
@@ -395,6 +435,8 @@ class ToolToCommandConverter {
             return convertCascadeWindows(input)
         case "tile_windows":
             return convertTileWindows(input)
+        case "flexible_position":
+            return convertFlexiblePosition(input)
         default:
             return nil
         }
@@ -581,6 +623,10 @@ class ToolToCommandConverter {
         if let focusMode = input["focus_mode"] as? Bool {
             parameters["focus"] = focusMode ? "true" : "false"
         }
+        // ✅ FIX: Preserve user_intent parameter for context detection
+        if let userIntent = input["user_intent"] as? String {
+            parameters["user_intent"] = userIntent
+        }
         
         let display = extractDisplay(from: input)
         
@@ -609,6 +655,65 @@ class ToolToCommandConverter {
             target: target,
             display: display,
             parameters: parameters
+        )
+    }
+    
+    private static func convertFlexiblePosition(_ input: [String: Any]) -> WindowCommand? {
+        guard let appName = input["app_name"] as? String,
+              let xPos = input["x_position"] as? String,
+              let yPos = input["y_position"] as? String,
+              let width = input["width"] as? String,
+              let height = input["height"] as? String else {
+            return nil
+        }
+        
+        let display = extractDisplay(from: input)
+        let screenBounds = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        
+        // Parse position values
+        let x: Double
+        let y: Double
+        
+        if xPos.hasSuffix("px") {
+            x = Double(xPos.dropLast(2)) ?? 0
+        } else {
+            let percentage = Double(xPos) ?? 0
+            x = screenBounds.width * (percentage / 100.0)
+        }
+        
+        if yPos.hasSuffix("px") {
+            y = Double(yPos.dropLast(2)) ?? 0
+        } else {
+            let percentage = Double(yPos) ?? 0
+            y = screenBounds.height * (percentage / 100.0)
+        }
+        
+        // Parse size values
+        let w: Double
+        let h: Double
+        
+        if width.hasSuffix("px") {
+            w = Double(width.dropLast(2)) ?? 0
+        } else {
+            let percentage = Double(width) ?? 0
+            w = screenBounds.width * (percentage / 100.0)
+        }
+        
+        if height.hasSuffix("px") {
+            h = Double(height.dropLast(2)) ?? 0
+        } else {
+            let percentage = Double(height) ?? 0
+            h = screenBounds.height * (percentage / 100.0)
+        }
+        
+        return WindowCommand(
+            action: .move,
+            target: appName,
+            position: .precise,
+            size: .precise,
+            customSize: CGSize(width: w, height: h),
+            customPosition: CGPoint(x: x, y: y),
+            display: display
         )
     }
 }
