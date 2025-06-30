@@ -287,6 +287,9 @@ class ClaudeLLMService {
         - Side columns: layer=1, positioned for auxiliary access (Terminal, chat apps)
         - Corner apps: layer=0, minimal space for monitoring/glanceable info
         
+        SCREEN UTILIZATION REQUIREMENT:
+        ALWAYS maximize screen usage - fill the entire available screen space unless user explicitly requests minimal/compact layouts. Position windows to use 100% of screen width and height collectively. Avoid leaving large empty areas unused.
+        
         ACCESSIBILITY REQUIREMENTS:
         - Every window must have clickable areas (title bars, edges, corners)
         - No window completely hidden behind others

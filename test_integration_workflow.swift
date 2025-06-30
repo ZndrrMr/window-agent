@@ -90,6 +90,9 @@ func buildMockPrompt(apps: [String], preferences: String) -> String {
     - Cascade apps: layer=2, positioned with strategic overlaps for peek visibility  
     - Side columns: layer=1, positioned for auxiliary access (Terminal, chat apps)
     
+    SCREEN UTILIZATION REQUIREMENT:
+    ALWAYS maximize screen usage - fill the entire available screen space unless user explicitly requests minimal/compact layouts. Position windows to use 100% of screen width and height collectively. Avoid leaving large empty areas unused.
+    
     CURRENT SYSTEM STATE:
     Running apps: Terminal, Cursor, Arc
     Screen: 1440x900 (Main)
@@ -122,26 +125,26 @@ func simulateLLMDecision(prompt: String, userInput: String) -> [(tool: String, p
             "app_name": "Cursor",
             "x_position": "0",
             "y_position": "0", 
-            "width": "55",
-            "height": "85",
+            "width": "70",     // Larger to maximize screen usage
+            "height": "100",   // Full height
             "layer": 3,
             "focus": true
         ]),
         ("flexible_position", [
             "app_name": "Terminal", 
-            "x_position": "75",
+            "x_position": "70",    // Starts where Cursor ends
             "y_position": "0",
-            "width": "25", 
-            "height": "100",
+            "width": "30",         // Fills remaining width
+            "height": "100",       // Full height
             "layer": 1,
             "focus": false
         ]),
         ("flexible_position", [
             "app_name": "Arc",
-            "x_position": "35",
-            "y_position": "15", 
-            "width": "45",
-            "height": "70",
+            "x_position": "25",    // Cascade behind Cursor
+            "y_position": "10", 
+            "width": "60",         // Good functional width
+            "height": "85",        // Near full height
             "layer": 2,
             "focus": false
         ])
@@ -213,7 +216,7 @@ func validateArrangement(_ toolCalls: [(tool: String, params: [String: Any])], s
         allValid = false
     }
     
-    // Check 3: Terminal uses user preference (right side, 25% width)
+    // Check 3: Terminal uses user preference (right side) and screen utilization (may be wider than 25%)
     if let terminal = windows.first(where: { $0.app == "Terminal" }) {
         let xPercent = terminal.bounds.minX / screenSize.width
         let widthPercent = terminal.bounds.width / screenSize.width
@@ -223,10 +226,13 @@ func validateArrangement(_ toolCalls: [(tool: String, params: [String: Any])], s
             allValid = false
         }
         
-        if abs(widthPercent - 0.25) > 0.01 {
-            print("❌ Terminal width not 25% (got \(Int(widthPercent * 100))%)")
+        // With screen utilization, Terminal may be wider than user's 25% preference
+        if widthPercent < 0.20 {
+            print("❌ Terminal too narrow for screen utilization (got \(Int(widthPercent * 100))%)")
             allValid = false
         }
+        
+        print("ℹ️  Terminal: \(Int(xPercent * 100))% x-position, \(Int(widthPercent * 100))% width (balancing user preference with screen utilization)")
     }
     
     // Check 4: Proper layer ordering
@@ -242,6 +248,20 @@ func validateArrangement(_ toolCalls: [(tool: String, params: [String: Any])], s
     if sortedByLayer[2].app != "Cursor" || sortedByLayer[2].layer != 3 {
         print("❌ Cursor should be layer 3")
         allValid = false
+    }
+    
+    // Check 5: Screen utilization (should use 90%+ of screen space)
+    let maxX = windows.map { $0.bounds.maxX }.max() ?? 0
+    let maxY = windows.map { $0.bounds.maxY }.max() ?? 0
+    let horizontalCoverage = maxX / screenSize.width
+    let verticalCoverage = maxY / screenSize.height
+    let totalCoverage = min(horizontalCoverage, verticalCoverage)
+    
+    if totalCoverage < 0.90 {
+        print("❌ Poor screen utilization (\(Int(totalCoverage * 100))% coverage)")
+        allValid = false
+    } else {
+        print("ℹ️  Screen utilization: \(Int(totalCoverage * 100))% coverage")
     }
     
     return allValid
