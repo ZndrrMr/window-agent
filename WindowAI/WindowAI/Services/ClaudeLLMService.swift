@@ -262,6 +262,39 @@ class ClaudeLLMService {
         // Add intelligent pattern hints
         prompt += patternHints
         
+        // Add app archetype classifications for current apps
+        if let context = context, !context.runningApps.isEmpty {
+            prompt += "\n\nAPP ARCHETYPE CLASSIFICATIONS:\n"
+            for app in context.runningApps {
+                let archetype = AppArchetypeClassifier.shared.classifyApp(app)
+                prompt += "- \(app): \(archetype.displayName) (\(archetype.cascadeStrategy))\n"
+            }
+        }
+        
+        // Add user preference data from corrections
+        let userPrefs = UserPreferenceTracker.shared.generatePreferenceSummary(context: "coding")
+        if !userPrefs.isEmpty {
+            prompt += "\n\(userPrefs)"
+        }
+        
+        // Add coordinated positioning instructions
+        prompt += """
+        
+        COORDINATED POSITIONING INSTRUCTIONS:
+        For multi-app arrangements, use multiple flexible_position calls with these guidelines:
+        - Primary app: layer=3, focus=true, positioned for maximum productivity
+        - Cascade apps: layer=2, positioned with strategic overlaps for peek visibility  
+        - Side columns: layer=1, positioned for auxiliary access (Terminal, chat apps)
+        - Corner apps: layer=0, minimal space for monitoring/glanceable info
+        
+        ACCESSIBILITY REQUIREMENTS:
+        - Every window must have clickable areas (title bars, edges, corners)
+        - No window completely hidden behind others
+        - Overlaps should leave 30+ pixels of target window visible
+        - Focus the app most relevant to user's context and intent
+        
+        """
+        
         if let context = context {
             prompt += "\n\nCURRENT SYSTEM STATE:\n"
             prompt += "Running apps: \(context.runningApps.joined(separator: ", "))\n"

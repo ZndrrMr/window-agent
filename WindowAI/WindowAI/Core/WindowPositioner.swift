@@ -5,6 +5,8 @@ import Foundation
 // MARK: - Window Positioning Engine
 class WindowPositioner {
     
+    static let shared = WindowPositioner(windowManager: WindowManager.shared)
+    
     private let windowManager: WindowManager
     private let constraintsManager = AppConstraintsManager.shared
     private let cascadePositioner: CascadePositioner
@@ -1193,5 +1195,60 @@ class WindowPositioner {
         
         // Default fallback
         return "general"
+    }
+    
+    // MARK: - Coordinated LLM Control
+    
+    func executeFlexiblePosition(_ command: WindowCommand, windowInfo: WindowInfo, screenSize: CGSize) -> Bool {
+        print("🎯 EXECUTING FLEXIBLE POSITION:")
+        print("  App: \(command.target)")
+        print("  Position: \(command.customPosition ?? CGPoint.zero)")
+        print("  Size: \(command.customSize ?? CGSize.zero)")
+        print("  Layer: \(command.parameters?["layer"] ?? "none")")
+        print("  Focus: \(command.parameters?["focus"] ?? "false")")
+        
+        // Validate bounds
+        guard let position = command.customPosition,
+              let size = command.customSize else {
+            print("❌ Missing custom position or size")
+            return false
+        }
+        
+        // Ensure window stays within screen bounds
+        let adjustedPosition = CGPoint(
+            x: max(0, min(position.x, screenSize.width - size.width)),
+            y: max(0, min(position.y, screenSize.height - size.height))
+        )
+        
+        let adjustedSize = CGSize(
+            width: max(200, min(size.width, screenSize.width)), // Minimum 200px wide
+            height: max(150, min(size.height, screenSize.height)) // Minimum 150px tall
+        )
+        
+        // Set window bounds
+        let newBounds = CGRect(origin: adjustedPosition, size: adjustedSize)
+        let success = windowManager.setWindowBounds(windowInfo, bounds: newBounds)
+        
+        if success {
+            print("✅ Window positioned successfully")
+            
+            // Handle focus if requested
+            if let focusParam = command.parameters?["focus"],
+               focusParam.lowercased() == "true" {
+                let focusSuccess = windowManager.focusWindow(windowInfo)
+                print("🎯 Focus \(focusSuccess ? "set" : "failed")")
+            }
+            
+            // Handle layer/stacking (simulated for now - would need additional window manager APIs)
+            if let layerParam = command.parameters?["layer"] {
+                print("📚 Layer \(layerParam) (stacking order)")
+                // In a full implementation, this would control z-order
+                // For now, we just log it
+            }
+        } else {
+            print("❌ Failed to position window")
+        }
+        
+        return success
     }
 }

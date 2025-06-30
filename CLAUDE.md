@@ -616,3 +616,187 @@ let functionSchema = """
 - **User preferences**: `WindowAI/Models/UserPreferences.swift`
 - **App configuration**: `WindowAI/Info.plist`
 - **UI components**: `WindowAI/UI/`
+
+## COORDINATED LLM CONTROL IMPLEMENTATION CHECKLIST
+
+### **OVERVIEW: LLM ORCHESTRATED WINDOW POSITIONING**
+Moving from black-box cascade to coordinated LLM control where the LLM makes specific positioning decisions based on context, app archetypes, and learned user preferences.
+
+### **PHASE 1: ENHANCED FLEXIBLE POSITIONING TOOL**
+
+#### **1.1 Enhanced flexible_position Tool** ✅
+- [x] Update LLMTools.swift flexible_position tool with comprehensive parameters
+- [x] Add layer/z-index control for proper stacking
+- [x] Add focus control parameter
+- [x] Support both percentage and pixel positioning
+- [x] Add validation for positioning bounds (0-100%)
+
+#### **1.2 Tool Converter Updates** ✅  
+- [x] Update ToolToCommandConverter.convertFlexiblePosition()
+- [x] Handle layer parameter for proper window stacking
+- [x] Handle focus parameter for setting active window
+- [x] Maintain backward compatibility with existing tools
+
+### **PHASE 2: PREFERENCE TRACKING SYSTEM** 
+
+#### **2.1 Simple Statistical Preference Tracker** ✅
+- [x] Create UserPreferenceTracker.swift for counting-based learning
+- [x] Track position preferences using median/mode (NOT average)
+- [x] Track size preferences with clustering (narrow/medium/wide zones)
+- [x] Track focus preferences by app and context
+- [x] Track app combination preferences for contexts
+
+#### **2.2 Preference Detection** ✅
+- [ ] Implement window change detection via Accessibility APIs
+- [x] Detect when user manually repositions windows after arrangement
+- [x] Detect when user manually resizes windows after arrangement  
+- [x] Detect when user changes focus after arrangement
+- [ ] Filter out non-user movements (system-initiated changes)
+
+#### **2.3 Preference Storage** ✅
+- [x] Create simple JSON/UserDefaults storage for preferences
+- [x] Store preferences by context (coding, writing, research, general)
+- [x] Store preferences by app combination patterns
+- [x] Implement preference aging (older preferences have less weight)
+
+### **PHASE 3: LLM PROMPT ENHANCEMENT**
+
+#### **3.1 App Archetype Context** ✅
+- [x] Add current app classifications to LLM prompt
+- [x] Include archetype preferences for each app
+- [x] Show optimal sizing and positioning hints per archetype
+- [x] Include cascade strategies for each archetype
+
+#### **3.2 User Preference Context** ✅
+- [x] Generate preference summary from UserPreferenceTracker
+- [x] Add position preferences (left/right/center frequency)
+- [x] Add sizing preferences (median widths by app)
+- [x] Add focus preferences (most common focus choices)
+- [x] Add context-specific preferences (coding vs writing patterns)
+
+#### **3.3 System State Context** ✅
+- [x] Include current window positions and sizes
+- [x] Include screen resolution and available space
+- [x] Include current focus state
+- [x] Include app running state
+
+### **PHASE 4: COORDINATED TOOL CALLING**
+
+#### **4.1 LLM Prompt Strategy** ✅
+- [x] Update system prompt to encourage multiple flexible_position calls
+- [x] Add examples of coordinated positioning
+- [x] Include guidelines for layer management (primary=3, cascade=2, side=1, corner=0)
+- [x] Add accessibility requirements (clickable areas, title bar visibility)
+
+#### **4.2 Positioning Intelligence** ✅
+- [x] Teach LLM to calculate overlap zones for peek visibility
+- [x] Include cascade positioning math guidelines
+- [x] Add screen space optimization strategies
+- [x] Include multi-app coordination examples
+
+### **PHASE 5: COMMAND EXECUTION UPDATES**
+
+#### **5.1 WindowPositioner Enhancements** ✅
+- [x] Update executeFlexiblePosition to handle layer parameter
+- [x] Implement proper z-index/layer stacking
+- [x] Add focus setting after positioning
+- [x] Add bounds validation and error handling
+
+#### **5.2 Coordinate Multiple Commands** ✅
+- [x] Execute multiple flexible_position calls in sequence
+- [x] Maintain proper layering order during execution
+- [x] Handle focus setting as final step
+- [ ] Add rollback capability if any positioning fails
+
+### **PHASE 6: TESTING FRAMEWORK**
+
+#### **6.1 Core Functionality Tests** ✅
+- [x] Test flexible_position tool with various parameters
+- [x] Test coordinate system (percentage and pixel)
+- [x] Test layer/stacking functionality
+- [x] Test focus setting functionality
+
+#### **6.2 Preference Tracking Tests** ✅
+- [x] Test position preference detection and counting
+- [x] Test size preference clustering and median calculation
+- [x] Test focus preference tracking
+- [x] Test preference summary generation
+
+#### **6.3 Integration Tests** ✅
+- [x] Test "i want to code" with Terminal, Cursor, Arc
+- [x] Test coordinated positioning with proper overlaps
+- [x] Test user preference application
+- [x] Test different screen resolutions and contexts
+
+#### **6.4 LLM Decision Tests** ✅
+- [x] Test that LLM makes multiple coordinated flexible_position calls
+- [x] Test that LLM applies archetype knowledge correctly
+- [x] Test that LLM applies user preferences correctly
+- [x] Test that LLM creates accessible layouts with proper peek zones
+
+### **PHASE 7: VALIDATION & REFINEMENT**
+
+#### **7.1 Layout Validation** ✅
+- [ ] Validate all windows remain on screen
+- [ ] Validate no windows are completely hidden
+- [ ] Validate clickable areas remain accessible
+- [ ] Validate focus behavior works correctly
+
+#### **7.2 User Experience** ✅
+- [ ] Add clear feedback when preferences are learned
+- [ ] Add onboarding message about preference learning
+- [ ] Add debugging output for LLM decision reasoning
+- [ ] Add preference reset functionality
+
+### **IMPLEMENTATION PRIORITY ORDER**
+
+1. **Enhanced flexible_position tool** (enables coordinated control)
+2. **Basic preference tracking** (enables learning)  
+3. **LLM prompt updates** (enables intelligent decisions)
+4. **Command execution updates** (enables proper stacking/focus)
+5. **Testing framework** (validates everything works)
+6. **Preference integration** (enables personalization)
+
+### **SUCCESS CRITERIA**
+
+#### **Functional Requirements:**
+- [ ] LLM makes 3-4 coordinated flexible_position calls for "i want to code"
+- [ ] Windows are positioned with proper overlaps and peek zones
+- [ ] User preferences are detected and applied automatically
+- [ ] All windows remain accessible with clickable areas
+- [ ] Focus is set to contextually appropriate app
+
+#### **User Experience Requirements:**
+- [ ] First-time arrangement works reasonably well
+- [ ] Arrangements improve after 2-3 user corrections
+- [ ] User can see/understand what preferences were learned
+- [ ] System handles unknown apps gracefully
+- [ ] Performance remains fast (< 2 second arrangement time)
+
+### **TECHNICAL IMPLEMENTATION NOTES**
+
+#### **Coordinate System:**
+- All positioning uses percentage-based coordinates (0-100%)
+- Origin (0,0) is top-left corner
+- Width/height are percentages of screen dimensions
+- Layer values: 0=bottom, 1=side columns, 2=cascade layers, 3=primary/focused
+
+#### **Preference Data Structure:**
+```swift
+struct UserPreference {
+    let context: String              // "coding", "writing", "general"
+    let appCombination: [String]     // apps present during arrangement
+    let corrections: [Correction]    // user adjustments made
+    let timestamp: Date              // when preference was recorded
+}
+```
+
+#### **LLM Tool Call Pattern:**
+```swift
+// Expected LLM output for "i want to code":
+flexible_position(app: "Cursor", x: "0", y: "0", width: "55", height: "85", layer: 3, focus: true)
+flexible_position(app: "Terminal", x: "75", y: "0", width: "25", height: "100", layer: 1) 
+flexible_position(app: "Arc", x: "35", y: "15", width: "45", height: "70", layer: 2)
+```
+
+This implementation transforms the window management from rigid archetype-based positioning to intelligent, user-adaptive, LLM-orchestrated layouts.

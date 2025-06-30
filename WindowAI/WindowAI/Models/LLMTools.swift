@@ -356,10 +356,10 @@ class WindowManagementTools {
         )
     )
     
-    // Flexible positioning with pixel-level precision
+    // Flexible positioning with pixel-level precision and layer control
     static let flexiblePositionTool = LLMTool(
         name: "flexible_position",
-        description: "Position and size a window with precise percentage or pixel values. Use this for custom positioning beyond standard layouts.",
+        description: "Position and size a window with precise percentage or pixel values and control stacking order. Use this for coordinated multi-window arrangements.",
         input_schema: LLMTool.ToolInputSchema(
             properties: [
                 "app_name": LLMTool.ToolInputSchema.PropertyDefinition(
@@ -382,12 +382,20 @@ class WindowManagementTools {
                     type: "string",
                     description: "Height as percentage (e.g., '75' for 75% of screen) or pixels (e.g., '600px')"
                 ),
+                "layer": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "integer",
+                    description: "Window stacking layer/z-index: 0=bottom/corner, 1=side columns, 2=cascade layers, 3=primary/focused"
+                ),
+                "focus": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "boolean",
+                    description: "Whether to focus this window after positioning (true for primary window)"
+                ),
                 "display": LLMTool.ToolInputSchema.PropertyDefinition(
                     type: "integer",
                     description: "Display index (0 for main display, 1 for secondary, etc.). Optional."
                 )
             ],
-            required: ["app_name", "x_position", "y_position", "width", "height"]
+            required: ["app_name", "x_position", "y_position", "width", "height", "layer"]
         )
     )
 }
@@ -706,6 +714,17 @@ class ToolToCommandConverter {
             h = screenBounds.height * (percentage / 100.0)
         }
         
+        // Handle layer and focus parameters
+        var parameters: [String: String] = [:]
+        
+        if let layer = input["layer"] as? Int {
+            parameters["layer"] = String(layer)
+        }
+        
+        if let focus = input["focus"] as? Bool {
+            parameters["focus"] = String(focus)
+        }
+        
         return WindowCommand(
             action: .move,
             target: appName,
@@ -713,7 +732,8 @@ class ToolToCommandConverter {
             size: .precise,
             customSize: CGSize(width: w, height: h),
             customPosition: CGPoint(x: x, y: y),
-            display: display
+            display: display,
+            parameters: parameters.isEmpty ? nil : parameters
         )
     }
 }
