@@ -38,16 +38,14 @@ enum WindowPosition: String, Codable, CaseIterable {
 
 // MARK: - Size Types
 enum WindowSize: String, Codable, CaseIterable {
-    case tiny = "tiny"           // 25% of screen
-    case small = "small"         // 33% of screen
-    case medium = "medium"       // 50% of screen
-    case large = "large"         // 67% of screen
-    case huge = "huge"           // 80% of screen
-    case half = "half"           // 50% of screen (alias for medium)
-    case quarter = "quarter"     // 25% of screen
-    case third = "third"         // 33% of screen
-    case twoThirds = "two-thirds" // 67% of screen
-    case threeQuarters = "three-quarters" // 75% of screen
+    case tiny = "tiny"           // Small window size
+    case small = "small"         // Small window size  
+    case medium = "medium"       // Medium window size
+    case large = "large"         // Large window size
+    case huge = "huge"           // Very large window size
+    case half = "half"           // Half screen size
+    case third = "third"         // One third screen size
+    case twoThirds = "two-thirds" // Two thirds screen size
     case full = "full"           // Maximize to visible screen
     case fit = "fit"             // Fit content (app determines size)
     case optimal = "optimal"     // Use app's preferred size

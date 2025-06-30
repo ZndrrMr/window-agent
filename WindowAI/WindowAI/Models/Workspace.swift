@@ -112,7 +112,7 @@ enum ScreenDivision: String, Codable, CaseIterable {
     case automatic = "automatic"
     case leftRight = "left_right"
     case topBottom = "top_bottom"
-    case quarters = "quarters"
+    case intelligent = "intelligent"
     case custom = "custom"
     
     var displayName: String {
@@ -120,7 +120,7 @@ enum ScreenDivision: String, Codable, CaseIterable {
         case .automatic: return "Automatic"
         case .leftRight: return "Left/Right Split"
         case .topBottom: return "Top/Bottom Split"
-        case .quarters: return "Four Quarters"
+        case .intelligent: return "Intelligent Layout"
         case .custom: return "Custom Layout"
         }
     }
@@ -240,7 +240,7 @@ class WorkspaceManager: ObservableObject {
                     AppContext(bundleID: "com.apple.Notes", appName: "Notes", category: .productivity),
                     AppContext(bundleID: "com.apple.Preview", appName: "Preview", category: .productivity)
                 ],
-                layout: LayoutConfiguration(screenDivision: .quarters)
+                layout: LayoutConfiguration(screenDivision: .intelligent)
             ),
             
             Workspace(

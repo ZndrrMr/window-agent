@@ -135,7 +135,7 @@ class WindowManagementTools {
                 "size": LLMTool.ToolInputSchema.PropertyDefinition(
                     type: "string",
                     description: "Size to resize the window to. Use 'custom' if specifying custom_height or custom_width",
-                    options: ["tiny", "small", "medium", "large", "huge", "half", "quarter", "third", "two-thirds", "three-quarters", "full", "optimal", "custom"]
+                    options: ["tiny", "small", "medium", "large", "huge", "half", "third", "two-thirds", "full", "optimal", "custom"]
                 ),
                 "custom_height": LLMTool.ToolInputSchema.PropertyDefinition(
                     type: "string",
@@ -180,7 +180,7 @@ class WindowManagementTools {
                 "size": LLMTool.ToolInputSchema.PropertyDefinition(
                     type: "string",
                     description: "Optional size for the window after opening",
-                    options: ["small", "medium", "large", "half", "quarter", "full", "optimal"]
+                    options: ["small", "medium", "large", "half", "full", "optimal"]
                 ),
                 "display": LLMTool.ToolInputSchema.PropertyDefinition(
                     type: "integer",

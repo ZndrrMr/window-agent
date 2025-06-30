@@ -98,8 +98,6 @@ class WindowPositioner {
             calculatedSize = CGSize(width: visibleBounds.width * 0.25, height: visibleBounds.height * 0.25)
         case .small:
             calculatedSize = CGSize(width: visibleBounds.width * 0.33, height: visibleBounds.height * 0.5)
-        case .quarter:
-            calculatedSize = CGSize(width: visibleBounds.width * 0.25, height: visibleBounds.height * 0.25)
         case .third:
             // Third width, full height - perfect for terminal/auxiliary apps
             calculatedSize = CGSize(width: visibleBounds.width * 0.33, height: visibleBounds.height)
@@ -110,8 +108,6 @@ class WindowPositioner {
         case .twoThirds:
             // Two-thirds width, full height - perfect for primary apps like code editors
             calculatedSize = CGSize(width: visibleBounds.width * 0.67, height: visibleBounds.height)
-        case .threeQuarters:
-            calculatedSize = CGSize(width: visibleBounds.width * 0.75, height: visibleBounds.height * 0.85)
         case .huge:
             calculatedSize = CGSize(width: visibleBounds.width * 0.8, height: visibleBounds.height * 0.9)
         case .full:
@@ -433,21 +429,74 @@ class WindowPositioner {
         if command.target.lowercased() == "cascade" || command.target.lowercased() == "intelligent" {
             let allWindows = windowManager.getAllWindows()
             
-            let userContext = UserContext(
-                activity: command.parameters?["activity"],
-                focusMode: command.parameters?["focus"] == "true"
+            // PHASE 1: Unminimize ALL windows first (same as cascadeWindows)
+            print("\n🔄 PHASE 1: Unminimizing all windows")
+            print("===================================")
+            for window in allWindows {
+                if windowManager.isWindowMinimized(window) {
+                    print("🔄 Unminimizing \(window.appName)...")
+                    let restoreSuccess = windowManager.restoreWindow(window)
+                    print("  Result: \(restoreSuccess ? "✅ Success" : "❌ Failed")")
+                } else {
+                    print("✅ \(window.appName) already visible")
+                }
+            }
+            
+            // Wait for all unminimize operations to complete
+            print("⏳ Waiting for unminimize operations to complete...")
+            Thread.sleep(forTimeInterval: 1.0)
+            
+            // PHASE 2: Use NEW FlexibleLayoutEngine instead of old cascade positioner
+            print("\n📐 PHASE 2: Intelligent FlexibleLayoutEngine positioning")
+            print("====================================================")
+            
+            let displayIndex = command.display ?? 0
+            let screenBounds = getFullDisplayBounds(displayIndex)
+            let windowNames = allWindows.map { $0.appName }
+            
+            // Extract context from command parameters
+            let context = command.parameters?["context"] ?? extractContextFromTarget(command.target, userIntent: command.parameters?["user_intent"])
+            
+            // Determine focused app
+            let focusedApp = intelligentlySelectFocusedApp(
+                windows: windowNames,
+                context: context,
+                userIntent: command.parameters?["user_intent"]
             )
             
-            let arrangements = cascadePositioner.arrangeIntelligentLayout(
-                windows: allWindows,
-                userIntent: command.target,
-                context: userContext
+            // Generate intelligent proportional layout using NEW FlexibleLayoutEngine
+            let flexibleArrangements = FlexibleLayoutEngine.generateFocusAwareLayout(
+                for: windowNames,
+                screenSize: screenBounds.size,
+                focusedApp: focusedApp,
+                context: context
             )
             
             var results: [String] = []
-            for arrangement in arrangements {
-                if windowManager.setWindowBounds(arrangement.window, bounds: arrangement.targetBounds) {
-                    results.append("Arranged \(arrangement.window.appName)")
+            for arrangement in flexibleArrangements {
+                guard let window = allWindows.first(where: { $0.appName == arrangement.window }) else {
+                    print("⚠️ Could not find window for arrangement: \(arrangement.window)")
+                    continue
+                }
+                
+                // Convert flexible position/size to pixels
+                let position = CGPoint(
+                    x: arrangement.position.x.toPixels(for: screenBounds.width) + screenBounds.origin.x,
+                    y: arrangement.position.y.toPixels(for: screenBounds.height) + screenBounds.origin.y
+                )
+                
+                let size = CGSize(
+                    width: arrangement.size.width.toPixels(for: screenBounds.width, otherDimension: nil) ?? screenBounds.width * 0.5,
+                    height: arrangement.size.height.toPixels(for: screenBounds.height, otherDimension: nil) ?? screenBounds.height * 0.5
+                )
+                
+                let bounds = CGRect(origin: position, size: size)
+                
+                print("📍 Positioning \(window.appName) to \(bounds)")
+                
+                // Disable validation since we're using full screen bounds for 100% coverage
+                if windowManager.setWindowBounds(window, bounds: bounds, validate: false) {
+                    results.append("Arranged \(window.appName) (\(arrangement.visibility.rawValue) visibility)")
                 }
             }
             
@@ -496,8 +545,8 @@ class WindowPositioner {
             }
         }
         
-        // Get screen bounds for layout
-        let screenBounds = getVisibleDisplayBounds(0)
+        // Get screen bounds for layout - use FULL bounds for 100% coverage
+        let screenBounds = getFullDisplayBounds(0)
         
         // Launch required apps if not running
         print("\n🚀 CHECKING APP STATUS:")
@@ -535,9 +584,10 @@ class WindowPositioner {
         case .topBottom:
             print("  🖼️ Using top-bottom layout")
             arrangeTopBottomLayout(workspace: workspace, screenBounds: screenBounds, gap: gap, results: &results, errors: &errors)
-        case .quarters:
-            print("  🖼️ Using quarters layout")
-            arrangeQuartersLayout(workspace: workspace, screenBounds: screenBounds, gap: gap, results: &results, errors: &errors)
+        case .intelligent:
+            // Use FlexibleLayoutEngine for intelligent proportional layout
+            print("  🖼️ Using intelligent FlexibleLayoutEngine layout")
+            return executeIntelligentArrangement(workspace, screenBounds: screenBounds)
         case .automatic:
             // Choose based on number of apps
             let totalApps = workspace.requiredApps.count + workspace.optionalApps.filter { windowManager.getWindowsForApp(named: $0.appName).count > 0 }.count
@@ -546,8 +596,8 @@ class WindowPositioner {
                 print("    → Using left-right layout")
                 arrangeLeftRightLayout(workspace: workspace, screenBounds: screenBounds, gap: gap, results: &results, errors: &errors)
             } else if totalApps <= 4 {
-                print("    → Using quarters layout")
-                arrangeQuartersLayout(workspace: workspace, screenBounds: screenBounds, gap: gap, results: &results, errors: &errors)
+                print("    → Using intelligent FlexibleLayoutEngine layout")
+                return executeIntelligentArrangement(workspace, screenBounds: screenBounds)
             } else {
                 print("    → Using tiled layout")
                 arrangeTiledLayout(workspace: workspace, screenBounds: screenBounds, gap: gap, results: &results, errors: &errors)
@@ -638,31 +688,58 @@ class WindowPositioner {
         }
     }
     
-    private func arrangeQuartersLayout(workspace: Workspace, screenBounds: CGRect, gap: CGFloat, results: inout [String], errors: inout [String]) {
-        let halfWidth = (screenBounds.width - gap) / 2
-        let halfHeight = (screenBounds.height - gap) / 2
-        
-        let positions = [
-            CGRect(x: screenBounds.origin.x, y: screenBounds.origin.y, width: halfWidth, height: halfHeight), // Top-left
-            CGRect(x: screenBounds.origin.x + halfWidth + gap, y: screenBounds.origin.y, width: halfWidth, height: halfHeight), // Top-right
-            CGRect(x: screenBounds.origin.x, y: screenBounds.origin.y + halfHeight + gap, width: halfWidth, height: halfHeight), // Bottom-left
-            CGRect(x: screenBounds.origin.x + halfWidth + gap, y: screenBounds.origin.y + halfHeight + gap, width: halfWidth, height: halfHeight) // Bottom-right
-        ]
-        
-        var appIndex = 0
+    private func executeIntelligentArrangement(_ workspace: Workspace, screenBounds: CGRect) -> CommandResult {
+        // Get all windows from workspace apps
         let allApps = workspace.requiredApps + workspace.optionalApps.filter { windowManager.getWindowsForApp(named: $0.appName).count > 0 }
+        let windowNames = allApps.map { $0.appName }
         
-        for appContext in allApps where appIndex < 4 {
-            if let window = windowManager.getWindowsForApp(named: appContext.appName).first {
-                let bounds = positions[appIndex]
-                
-                if windowManager.setWindowBounds(window, bounds: bounds) {
-                    let positionName = ["top-left", "top-right", "bottom-left", "bottom-right"][appIndex]
-                    results.append("Positioned \(appContext.appName) at \(positionName)")
-                }
-                appIndex += 1
+        guard !windowNames.isEmpty else {
+            return CommandResult(success: false, message: "No windows found in workspace")
+        }
+        
+        print("🎯 INTELLIGENT ARRANGEMENT: Using FlexibleLayoutEngine")
+        print("   Apps: \(windowNames.joined(separator: ", "))")
+        
+        // Use FlexibleLayoutEngine for intelligent proportional layout
+        let flexibleArrangements = FlexibleLayoutEngine.generateFocusAwareLayout(
+            for: windowNames,
+            screenSize: screenBounds.size,
+            focusedApp: windowNames.first,
+            context: "workspace"
+        )
+        
+        var results: [String] = []
+        for arrangement in flexibleArrangements {
+            // Find the actual window
+            guard let appContext = allApps.first(where: { $0.appName == arrangement.window }),
+                  let window = windowManager.getWindowsForApp(named: appContext.appName).first else {
+                print("⚠️ Could not find window for: \(arrangement.window)")
+                continue
+            }
+            
+            // Convert flexible position/size to pixels
+            let position = CGPoint(
+                x: arrangement.position.x.toPixels(for: screenBounds.width) + screenBounds.origin.x,
+                y: arrangement.position.y.toPixels(for: screenBounds.height) + screenBounds.origin.y
+            )
+            
+            let size = CGSize(
+                width: arrangement.size.width.toPixels(for: screenBounds.width, otherDimension: nil) ?? screenBounds.width * 0.5,
+                height: arrangement.size.height.toPixels(for: screenBounds.height, otherDimension: nil) ?? screenBounds.height * 0.5
+            )
+            
+            let bounds = CGRect(origin: position, size: size)
+            
+            print("📍 Intelligent positioning \(appContext.appName) to \(bounds)")
+            
+            // Disable validation since we're using full screen bounds for 100% coverage
+            if windowManager.setWindowBounds(window, bounds: bounds, validate: false) {
+                results.append("Intelligently positioned \(appContext.appName)")
             }
         }
+        
+        let success = !results.isEmpty
+        return CommandResult(success: success, message: results.joined(separator: ", "))
     }
     
     private func arrangeTiledLayout(workspace: Workspace, screenBounds: CGRect, gap: CGFloat, results: inout [String], errors: inout [String]) {
@@ -746,7 +823,7 @@ class WindowPositioner {
             optionalApps: [
                 AppContext(bundleID: "com.apple.Preview", appName: "Preview", category: .productivity)
             ],
-            layout: LayoutConfiguration(screenDivision: .quarters)
+            layout: LayoutConfiguration(screenDivision: .intelligent)
         )
         return executeWorkspaceArrangement(workspace)
     }
@@ -854,7 +931,7 @@ class WindowPositioner {
                 results.append("Tiled \(windows[2].appName) to bottom-right")
             }
         case 4:
-            // Four windows - quarters
+            // Four windows - 2x2 grid layout
             let halfWidth = (screenBounds.width - gap) / 2
             let halfHeight = (screenBounds.height - gap) / 2
             

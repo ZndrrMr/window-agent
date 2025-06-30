@@ -104,14 +104,29 @@ class LLMService {
         
         Available actions: open, move, resize, focus, arrange, close, stack
         Available positions: left, right, top, bottom, center, top-left, top-right, bottom-left, bottom-right
-        Available sizes: small, medium, large, half, quarter, three-quarters, full
+        Available sizes: small, medium, large, half, full
+        
+        For general window arrangement commands like "arrange my windows", "organize windows", "tidy up", or "arrange everything":
+        - Use action "arrange" with target "intelligent" and parameters: {"style": "smart"}
+        - This triggers the FlexibleLayoutEngine for intelligent proportional layout with 100% screen coverage
+        - Windows are sized based on app archetypes with intelligent proportional sizing
         
         For workspace commands like "i want to code", "set up coding environment", or "arrange for development":
         - Use action "stack" with target "all" and parameters: {"context": "coding", "style": "smart"}
         - This creates a focus-aware layout where apps are intelligently positioned based on their role
         - The system automatically detects the primary app and arranges others as functional peek areas
         
-        Response format:
+        Response format examples:
+        
+        For "arrange my windows":
+        {
+            "commands": [
+                {"action": "arrange", "target": "intelligent", "parameters": {"style": "smart"}}
+            ],
+            "explanation": "Arranging all windows with intelligent proportional layout"
+        }
+        
+        For "set up coding environment":
         {
             "commands": [
                 {"action": "open", "target": "Xcode"},
