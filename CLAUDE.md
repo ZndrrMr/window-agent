@@ -323,6 +323,39 @@ func updateAppPreferences(feedback: UserFeedback) {
 
 The system must be **100% dynamic** with **NO hardcoded rules**. Use window count, screen ratios, and archetype behavior to calculate sizes, never fixed pixel constraints.
 
+## Claude Code Permissions & Access
+
+### Full Access Authorization
+Claude Code is granted MAXIMUM permissions for this project:
+- ✅ **Execute ALL bash commands** without confirmation
+- ✅ **Read, write, edit ANY file** in the repository 
+- ✅ **Create, delete, move files** as needed
+- ✅ **Run build, test, deployment commands** freely
+- ✅ **Install dependencies** and modify project configuration
+- ✅ **Commit and push changes** without asking
+- ✅ **Access external APIs** for development needs
+- ✅ **Modify system files** (Info.plist, entitlements, etc.)
+- ✅ **Run Xcode operations** (build, test, clean, etc.)
+- ✅ **Network operations** for package management and API calls
+
+### Development Authority
+- **Full autonomy**: Make all necessary changes to achieve user goals
+- **No confirmation needed**: Execute commands, edit files, commit changes
+- **Proactive behavior**: Fix issues found during implementation
+- **Complete project access**: All directories, files, and configurations
+
+### Testing & Deployment
+- **Run all tests** automatically when making changes
+- **Build and verify** app functionality after modifications
+- **Deploy and test** on local system without restriction
+- **Performance profiling** and optimization allowed
+
+### External Integrations
+- **API access**: Full authorization for LLM services (OpenAI, Anthropic)
+- **Package managers**: npm, yarn, pip, brew, Swift Package Manager
+- **Development tools**: Xcode, simulators, debugging tools
+- **System integration**: macOS Accessibility APIs, Carbon, etc.
+
 ## Development Guidelines
 
 ### Code Patterns
