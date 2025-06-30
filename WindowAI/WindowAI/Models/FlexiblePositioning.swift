@@ -426,8 +426,8 @@ class FlexibleLayoutEngine {
         screenSize: CGSize
     ) -> [FlexibleWindowArrangement] {
         
-        print("🎯 ENSURING 100% SCREEN COVERAGE")
-        print("===============================")
+        print("🎯 ENSURING 100% SCREEN COVERAGE WITH INTELLIGENT PROPORTIONS")
+        print("===========================================================")
         
         guard arrangements.count >= 2 else {
             // Single app - just maximize it
@@ -445,56 +445,165 @@ class FlexibleLayoutEngine {
             return arrangements
         }
         
-        // Create perfect 2x2 grid tiling for 100% coverage
-        let halfWidth = 0.5
-        let halfHeight = 0.5
-        
-        // Calculate area preferences based on archetype sizes
-        var appPreferences: [(window: String, preference: Double)] = []
+        // PRESERVE INTELLIGENT SIZING: Use archetype-based proportional layout
+        // Calculate total area preferences from intelligent sizing
+        var appPreferences: [(window: String, widthPref: Double, heightPref: Double, area: Double)] = []
         
         for arrangement in arrangements {
-            // Convert current size to area preference (extract percentage values)
             let widthPct = extractPercentage(from: arrangement.size.width)
             let heightPct = extractPercentage(from: arrangement.size.height)
-            let currentArea = widthPct * heightPct
-            appPreferences.append((window: arrangement.window, preference: currentArea))
+            let area = widthPct * heightPct
+            appPreferences.append((
+                window: arrangement.window, 
+                widthPref: widthPct, 
+                heightPref: heightPct, 
+                area: area
+            ))
+            print("  \(arrangement.window): archetype size \(Int(widthPct*100))%×\(Int(heightPct*100))% (area: \(Int(area*10000)/100)%)")
         }
         
-        // Normalize preferences
-        let totalPreference = appPreferences.reduce(0) { $0 + $1.preference }
-        let normalizedPrefs = appPreferences.map { (window: $0.window, weight: $0.preference / totalPreference) }
+        // Sort by area (largest gets priority positioning)
+        let sortedApps = appPreferences.sorted { $0.area > $1.area }
+        let primaryApp = sortedApps[0]
         
-        // Sort by weight (largest first)
-        let sortedApps = normalizedPrefs.sorted { $0.weight > $1.weight }
+        print("  Primary app (largest): \(primaryApp.window)")
         
-        // Assign to quadrants
+        // Create intelligent tessellation based on archetype proportions
         var perfectArrangements: [FlexibleWindowArrangement] = []
-        let quadrants = [
-            (x: 0.0, y: 0.0),      // Top-left
-            (x: 0.5, y: 0.0),      // Top-right  
-            (x: 0.0, y: 0.5),      // Bottom-left
-            (x: 0.5, y: 0.5)       // Bottom-right
-        ]
         
-        print("  Grid assignment:")
-        for (index, sortedApp) in sortedApps.enumerated() {
-            guard index < quadrants.count else { break }
+        switch arrangements.count {
+        case 2:
+            // Two apps: Use archetype proportions horizontally or vertically
+            let app1 = sortedApps[0]
+            let app2 = sortedApps[1]
             
-            let quadrant = quadrants[index]
-            let originalArrangement = arrangements.first { $0.window == sortedApp.window }!
+            // Determine split based on larger app's proportions
+            if app1.widthPref > app1.heightPref {
+                // Wide primary → vertical split
+                let split = normalizeToSum([app1.widthPref, app2.widthPref], target: 1.0)
+                
+                perfectArrangements.append(FlexibleWindowArrangement(
+                    window: app1.window,
+                    position: .percentage(x: 0, y: 0),
+                    size: .percentage(width: split[0], height: 1.0),
+                    layer: arrangements.first { $0.window == app1.window }!.layer,
+                    visibility: .full
+                ))
+                
+                perfectArrangements.append(FlexibleWindowArrangement(
+                    window: app2.window,
+                    position: .percentage(x: split[0], y: 0),
+                    size: .percentage(width: split[1], height: 1.0),
+                    layer: arrangements.first { $0.window == app2.window }!.layer,
+                    visibility: .full
+                ))
+                
+            } else {
+                // Tall primary → horizontal split
+                let split = normalizeToSum([app1.heightPref, app2.heightPref], target: 1.0)
+                
+                perfectArrangements.append(FlexibleWindowArrangement(
+                    window: app1.window,
+                    position: .percentage(x: 0, y: 0),
+                    size: .percentage(width: 1.0, height: split[0]),
+                    layer: arrangements.first { $0.window == app1.window }!.layer,
+                    visibility: .full
+                ))
+                
+                perfectArrangements.append(FlexibleWindowArrangement(
+                    window: app2.window,
+                    position: .percentage(x: 0, y: split[0]),
+                    size: .percentage(width: 1.0, height: split[1]),
+                    layer: arrangements.first { $0.window == app2.window }!.layer,
+                    visibility: .full
+                ))
+            }
             
-            let perfectArrangement = FlexibleWindowArrangement(
-                window: sortedApp.window,
-                position: .percentage(x: quadrant.x, y: quadrant.y),
-                size: .percentage(width: halfWidth, height: halfHeight),
-                layer: originalArrangement.layer,
-                visibility: originalArrangement.visibility
-            )
+        case 3:
+            // Three apps: Primary gets major space, two others share remainder
+            let app1 = sortedApps[0] // Primary
+            let app2 = sortedApps[1] 
+            let app3 = sortedApps[2]
             
-            perfectArrangements.append(perfectArrangement)
+            // Primary gets 60-70% of space, others share the rest
+            let primaryWidth = max(0.6, min(0.7, app1.widthPref * 1.2)) // Scale up primary
+            let remainingWidth = 1.0 - primaryWidth
+            let split = normalizeToSum([app2.heightPref, app3.heightPref], target: 1.0)
             
-            let quadrantName = ["Top-left", "Top-right", "Bottom-left", "Bottom-right"][index]
-            print("    \(sortedApp.window): \(quadrantName) (25% each)")
+            perfectArrangements.append(FlexibleWindowArrangement(
+                window: app1.window,
+                position: .percentage(x: 0, y: 0),
+                size: .percentage(width: primaryWidth, height: 1.0),
+                layer: arrangements.first { $0.window == app1.window }!.layer,
+                visibility: .full
+            ))
+            
+            perfectArrangements.append(FlexibleWindowArrangement(
+                window: app2.window,
+                position: .percentage(x: primaryWidth, y: 0),
+                size: .percentage(width: remainingWidth, height: split[0]),
+                layer: arrangements.first { $0.window == app2.window }!.layer,
+                visibility: .full
+            ))
+            
+            perfectArrangements.append(FlexibleWindowArrangement(
+                window: app3.window,
+                position: .percentage(x: primaryWidth, y: split[0]),
+                size: .percentage(width: remainingWidth, height: split[1]),
+                layer: arrangements.first { $0.window == app3.window }!.layer,
+                visibility: .full
+            ))
+            
+        default:
+            // Four+ apps: Intelligent 2×2 with proportional sizing
+            let app1 = sortedApps[0] // Top-left (primary)
+            let app2 = sortedApps[1] // Top-right
+            let app3 = sortedApps[2] // Bottom-left
+            let app4 = sortedApps[3] // Bottom-right
+            
+            // Calculate proportional splits based on archetype preferences
+            let topRowSplit = normalizeToSum([app1.widthPref, app2.widthPref], target: 1.0)
+            let bottomRowSplit = normalizeToSum([app3.widthPref, app4.widthPref], target: 1.0)
+            let leftColSplit = normalizeToSum([app1.heightPref, app3.heightPref], target: 1.0)
+            let rightColSplit = normalizeToSum([app2.heightPref, app4.heightPref], target: 1.0)
+            
+            // Use average of row and column constraints for balanced layout
+            let leftWidth = (topRowSplit[0] + bottomRowSplit[0]) / 2.0
+            let rightWidth = 1.0 - leftWidth
+            let topHeight = (leftColSplit[0] + rightColSplit[0]) / 2.0
+            let bottomHeight = 1.0 - topHeight
+            
+            perfectArrangements.append(FlexibleWindowArrangement(
+                window: app1.window,
+                position: .percentage(x: 0, y: 0),
+                size: .percentage(width: leftWidth, height: topHeight),
+                layer: arrangements.first { $0.window == app1.window }!.layer,
+                visibility: .full
+            ))
+            
+            perfectArrangements.append(FlexibleWindowArrangement(
+                window: app2.window,
+                position: .percentage(x: leftWidth, y: 0),
+                size: .percentage(width: rightWidth, height: topHeight),
+                layer: arrangements.first { $0.window == app2.window }!.layer,
+                visibility: .full
+            ))
+            
+            perfectArrangements.append(FlexibleWindowArrangement(
+                window: app3.window,
+                position: .percentage(x: 0, y: topHeight),
+                size: .percentage(width: leftWidth, height: bottomHeight),
+                layer: arrangements.first { $0.window == app3.window }!.layer,
+                visibility: .full
+            ))
+            
+            perfectArrangements.append(FlexibleWindowArrangement(
+                window: app4.window,
+                position: .percentage(x: leftWidth, y: topHeight),
+                size: .percentage(width: rightWidth, height: bottomHeight),
+                layer: arrangements.first { $0.window == app4.window }!.layer,
+                visibility: .full
+            ))
         }
         
         // Reorder to match original arrangement order
@@ -505,9 +614,20 @@ class FlexibleLayoutEngine {
             }
         }
         
-        print("  Result: Perfect 2x2 tiling → 100% coverage guaranteed")
+        print("  Result: Intelligent proportional layout → 100% coverage with archetype-based sizing")
         
         return reorderedArrangements
+    }
+    
+    // Helper function to normalize values to sum to target while preserving proportions
+    private static func normalizeToSum(_ values: [Double], target: Double) -> [Double] {
+        let sum = values.reduce(0, +)
+        guard sum > 0 else { 
+            // Equal distribution if no valid input
+            let equal = target / Double(values.count)
+            return Array(repeating: equal, count: values.count) 
+        }
+        return values.map { ($0 / sum) * target }
     }
     
     // Helper function to extract percentage value from SizeValue
