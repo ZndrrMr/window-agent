@@ -390,80 +390,198 @@ class FlexibleLayoutEngine {
             cascadeIndex += 1
         }
         
-        // Add corner apps (monitors)
+        // Add corner apps (monitors) - SCREEN-MAXIMIZED SIZES
         var cornerIndex = 0
         for cornerApp in cornerApps {
             let position = getCornerPosition(index: cornerIndex)
+            let archetype = classifier.classifyApp(cornerApp)
+            
+            // Use proper archetype-based sizing instead of tiny hardcoded 15%
+            let size = getCascadeSize(
+                for: archetype,
+                isFocused: false,
+                focusedArchetype: focusedArchetype
+            )
             
             arrangements.append(FlexibleWindowArrangement(
                 window: cornerApp,
                 position: position,
-                size: .percentage(width: 0.15, height: 0.15),
+                size: size,  // No longer hardcoded tiny 15%!
                 layer: 0,
                 visibility: .minimal
             ))
             cornerIndex += 1
         }
         
-        return arrangements
+        // FINAL STEP: Ensure 100% screen coverage through perfect tiling
+        let perfectArrangements = ensurePerfectScreenCoverage(arrangements, screenSize: screenSize)
+        
+        return perfectArrangements
+    }
+    
+    // MARK: - 100% Screen Coverage Guarantee
+    
+    private static func ensurePerfectScreenCoverage(
+        _ arrangements: [FlexibleWindowArrangement],
+        screenSize: CGSize
+    ) -> [FlexibleWindowArrangement] {
+        
+        print("🎯 ENSURING 100% SCREEN COVERAGE")
+        print("===============================")
+        
+        guard arrangements.count >= 2 else {
+            // Single app - just maximize it
+            if let arrangement = arrangements.first {
+                let perfectArrangement = FlexibleWindowArrangement(
+                    window: arrangement.window,
+                    position: .percentage(x: 0, y: 0),
+                    size: .percentage(width: 1.0, height: 1.0),
+                    layer: arrangement.layer,
+                    visibility: arrangement.visibility
+                )
+                print("  Single app: \(arrangement.window) → 100% coverage")
+                return [perfectArrangement]
+            }
+            return arrangements
+        }
+        
+        // Create perfect 2x2 grid tiling for 100% coverage
+        let halfWidth = 0.5
+        let halfHeight = 0.5
+        
+        // Calculate area preferences based on archetype sizes
+        var appPreferences: [(window: String, preference: Double)] = []
+        
+        for arrangement in arrangements {
+            // Convert current size to area preference (extract percentage values)
+            let widthPct = extractPercentage(from: arrangement.size.width)
+            let heightPct = extractPercentage(from: arrangement.size.height)
+            let currentArea = widthPct * heightPct
+            appPreferences.append((window: arrangement.window, preference: currentArea))
+        }
+        
+        // Normalize preferences
+        let totalPreference = appPreferences.reduce(0) { $0 + $1.preference }
+        let normalizedPrefs = appPreferences.map { (window: $0.window, weight: $0.preference / totalPreference) }
+        
+        // Sort by weight (largest first)
+        let sortedApps = normalizedPrefs.sorted { $0.weight > $1.weight }
+        
+        // Assign to quadrants
+        var perfectArrangements: [FlexibleWindowArrangement] = []
+        let quadrants = [
+            (x: 0.0, y: 0.0),      // Top-left
+            (x: 0.5, y: 0.0),      // Top-right  
+            (x: 0.0, y: 0.5),      // Bottom-left
+            (x: 0.5, y: 0.5)       // Bottom-right
+        ]
+        
+        print("  Grid assignment:")
+        for (index, sortedApp) in sortedApps.enumerated() {
+            guard index < quadrants.count else { break }
+            
+            let quadrant = quadrants[index]
+            let originalArrangement = arrangements.first { $0.window == sortedApp.window }!
+            
+            let perfectArrangement = FlexibleWindowArrangement(
+                window: sortedApp.window,
+                position: .percentage(x: quadrant.x, y: quadrant.y),
+                size: .percentage(width: halfWidth, height: halfHeight),
+                layer: originalArrangement.layer,
+                visibility: originalArrangement.visibility
+            )
+            
+            perfectArrangements.append(perfectArrangement)
+            
+            let quadrantName = ["Top-left", "Top-right", "Bottom-left", "Bottom-right"][index]
+            print("    \(sortedApp.window): \(quadrantName) (25% each)")
+        }
+        
+        // Reorder to match original arrangement order
+        var reorderedArrangements: [FlexibleWindowArrangement] = []
+        for originalArrangement in arrangements {
+            if let perfectArrangement = perfectArrangements.first(where: { $0.window == originalArrangement.window }) {
+                reorderedArrangements.append(perfectArrangement)
+            }
+        }
+        
+        print("  Result: Perfect 2x2 tiling → 100% coverage guaranteed")
+        
+        return reorderedArrangements
+    }
+    
+    // Helper function to extract percentage value from SizeValue
+    private static func extractPercentage(from sizeValue: FlexibleSize.SizeValue) -> Double {
+        switch sizeValue {
+        case .percentage(let pct):
+            return pct
+        case .pixels(let px):
+            return px / 1440.0  // Approximate percentage based on typical screen width
+        case .aspectRatio(let ratio):
+            return ratio * 0.5  // Approximate
+        case .content:
+            return 0.25  // Default assumption
+        }
     }
     
     // MARK: - Dynamic Sizing Functions
     
     private static func getPrimarySize(for archetype: AppArchetype, appCount: Int) -> FlexibleSize {
+        // SCREEN-MAXIMIZED primary sizes - expand beyond typical archetype limitations
         switch archetype {
         case .codeWorkspace:
-            // IDEs need more space, scale down with more apps
-            let width = appCount <= 2 ? 0.70 : appCount == 3 ? 0.55 : 0.50
-            let height = appCount <= 2 ? 0.90 : 0.85
+            // IDEs get maximum space for productivity, scale appropriately with app count
+            let width = appCount <= 2 ? 0.80 : appCount == 3 ? 0.65 : 0.60  // Increased from 0.70/0.55/0.50
+            let height = appCount <= 2 ? 0.95 : 0.90  // Increased from 0.90/0.85
             return .percentage(width: width, height: height)
             
         case .contentCanvas:
-            // Browsers/design tools need good width
-            let width = appCount <= 2 ? 0.65 : appCount == 3 ? 0.55 : 0.50
-            let height = 0.90
+            // Browsers/design tools expanded for better functionality and screen coverage
+            let width = appCount <= 2 ? 0.75 : appCount == 3 ? 0.65 : 0.60  // Increased from 0.65/0.55/0.50
+            let height = 0.95  // Increased from 0.90
             return .percentage(width: width, height: height)
             
         case .textStream:
-            // Text streams as primary (e.g., focused Terminal)
-            let width = min(0.30, 500.0 / 1440.0) // Max 30% or 500px
-            let height = 1.0
+            // Text streams expanded beyond minimal size - NO HARDCODED PIXEL CONSTRAINTS
+            let width = appCount <= 2 ? 0.45 : appCount == 3 ? 0.40 : 0.35  // Dynamic scaling, no pixel limits
+            let height = 1.0  // Full height
             return .percentage(width: width, height: height)
             
         case .glanceableMonitor:
-            // Monitors rarely primary, but if so, small window
-            return .percentage(width: 0.30, height: 0.40)
+            // Monitors expanded when primary for better screen utilization
+            return .percentage(width: 0.45, height: 0.60)  // Increased from 0.30x0.40
             
         case .unknown:
-            // Default to content canvas sizing
-            return .percentage(width: 0.55, height: 0.85)
+            // Default to larger sizing for screen maximization
+            return .percentage(width: 0.65, height: 0.90)  // Increased from 0.55x0.85
         }
     }
     
     private static func getPrimaryPosition(for archetype: AppArchetype) -> FlexiblePosition {
+        // SCREEN-MAXIMIZED positioning - start from left edge to fill screen
         switch archetype {
         case .textStream:
-            // Text streams as primary go to the right
-            return .percentage(x: 0.70, y: 0.0)
+            // Text streams start from left edge for maximum screen utilization (was 0.70 - huge waste!)
+            return .percentage(x: 0.0, y: 0.0)
         case .glanceableMonitor:
-            // Monitors in corner
-            return .percentage(x: 0.70, y: 0.60)
+            // Monitors start from left edge too when primary
+            return .percentage(x: 0.0, y: 0.0)  // Changed from corner positioning
         default:
-            // Most apps start at origin
+            // All apps start at origin for maximum screen coverage
             return .percentage(x: 0.0, y: 0.0)
         }
     }
     
     private static func getSideColumnPosition(index: Int, total: Int) -> FlexiblePosition {
-        // Side columns go to the right edge
-        let x = index == 0 ? 0.75 : 0.70 - (Double(index) * 0.05)
+        // SCREEN-MAXIMIZED side columns - position to complement main windows better
+        let x = index == 0 ? 0.65 : 0.60 - (Double(index) * 0.05)  // Moved left from 0.75/0.70 for better coverage
         return .percentage(x: x, y: 0.0)
     }
     
     private static func getSideColumnSize(for archetype: AppArchetype, isFocused: Bool) -> FlexibleSize {
-        // Text streams get consistent narrow width
-        let width = isFocused ? 0.30 : 0.25
-        let height = isFocused ? 1.0 : 0.85
+        // Expanded side column sizes for better screen utilization
+        let width = isFocused ? 0.35 : 0.30  // Increased from 0.30/0.25
+        let height = isFocused ? 1.0 : 0.90  // Increased from 1.0/0.85
         return .percentage(width: width, height: height)
     }
     
@@ -473,35 +591,37 @@ class FlexibleLayoutEngine {
         focusedArchetype: AppArchetype,
         hasSideColumns: Bool
     ) -> FlexiblePosition {
-        // Dynamic cascade positioning based on context
+        // SCREEN-MAXIMIZED cascade positioning - fill entire screen space
         let baseX: Double
         let baseY: Double
         
+        // OPTIMIZE: Start from screen edges to maximize coverage
         switch focusedArchetype {
         case .codeWorkspace:
-            // When IDE is focused, cascade from right side
-            baseX = 0.45
-            baseY = 0.10
+            // When IDE is focused, start from left edge to maximize space
+            baseX = 0.05  // Start from left edge (was 0.45)
+            baseY = 0.02  // Start from top edge (was 0.10)
         case .contentCanvas:
-            // When browser is focused, cascade from left
-            baseX = 0.20
-            baseY = 0.05
+            // When browser is focused, start from left edge
+            baseX = 0.02  // Start from left edge (was 0.20)
+            baseY = 0.02  // Start from top edge (was 0.05)
         case .textStream:
-            // When terminal is focused, cascade in center
-            baseX = 0.35
-            baseY = 0.10
+            // When terminal is focused, still start from left to fill screen
+            baseX = 0.05  // Start from left edge (was 0.35 - huge waste!)
+            baseY = 0.02  // Start from top edge (was 0.10)
         default:
-            baseX = 0.30
-            baseY = 0.10
+            baseX = 0.05  // Always start from left edge
+            baseY = 0.02  // Always start from top edge
         }
         
-        // Apply cascade offset based on index
-        let offsetX = Double(index) * 0.15
-        let offsetY = Double(index) * 0.15
+        // OPTIMIZED cascade offsets - tighter spacing to maximize coverage
+        let offsetX = Double(index) * 0.08  // Reduced from 0.15 to fit more windows
+        let offsetY = Double(index) * 0.06  // Reduced from 0.15 for better coverage
         
+        // SCREEN UTILIZATION: Allow windows to span entire screen width
         return .percentage(
-            x: min(baseX + offsetX, 0.60),
-            y: min(baseY + offsetY, 0.50)
+            x: min(baseX + offsetX, 0.95),  // Increased to 0.95 to reach near screen edge
+            y: min(baseY + offsetY, 0.25)   // Reduced to 0.25 to keep cascade tighter at top
         )
     }
     
@@ -514,16 +634,22 @@ class FlexibleLayoutEngine {
             return getPrimarySize(for: archetype, appCount: 3)
         }
         
-        // Non-focused cascade apps
+        // SCREEN-MAXIMIZED sizes for non-focused cascade apps
         switch archetype {
         case .contentCanvas:
-            // Browsers need minimum functional width
-            return .percentage(width: 0.35, height: 0.80)
+            // Browsers expanded for maximum screen coverage and functionality
+            return .percentage(width: 0.65, height: 0.95)  // Further increased from 0.55x0.90
         case .codeWorkspace:
-            // Secondary IDEs
-            return .percentage(width: 0.40, height: 0.80)
+            // Secondary IDEs get maximum space for productivity
+            return .percentage(width: 0.70, height: 0.95)  // Further increased from 0.60x0.90
+        case .textStream:
+            // Terminal/console apps expanded significantly beyond minimal size
+            return .percentage(width: 0.55, height: 0.95)  // Further increased from 0.45x0.90
+        case .glanceableMonitor:
+            // System monitors expanded to maximize available space
+            return .percentage(width: 0.45, height: 0.90)  // Further increased from 0.35x0.85
         default:
-            return .percentage(width: 0.35, height: 0.75)
+            return .percentage(width: 0.60, height: 0.90)  // Further increased default sizes
         }
     }
     

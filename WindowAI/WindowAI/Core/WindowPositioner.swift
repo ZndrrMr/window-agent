@@ -308,6 +308,13 @@ class WindowPositioner {
             print("  📍 Setting position to: \(position) for \(command.target)")
             print("  📐 Setting size to: \(size) for \(command.target)")
             
+            // CRITICAL: Unminimize window before maximizing it
+            if windowManager.isWindowMinimized(window) {
+                print("🔄 Unminimizing \(command.target) before maximizing")
+                _ = windowManager.restoreWindow(window)
+                Thread.sleep(forTimeInterval: 0.1)
+            }
+            
             // Create a window-sized rect at the correct position
             let targetBounds = CGRect(origin: position, size: size)
             let success = windowManager.setWindowBounds(window, bounds: targetBounds, validate: false)
@@ -315,6 +322,13 @@ class WindowPositioner {
             let message = success ? "Maximized \(command.target) on display \(displayIndex)" : "Failed to maximize \(command.target)"
             return CommandResult(success: success, message: message, command: command)
         } else {
+            // CRITICAL: Unminimize window before maximizing it
+            if windowManager.isWindowMinimized(window) {
+                print("🔄 Unminimizing \(command.target) before maximizing")
+                _ = windowManager.restoreWindow(window)
+                Thread.sleep(forTimeInterval: 0.1)
+            }
+            
             // Use default maximize which uses window's current display
             let success = windowManager.maximizeWindow(window)
             let message = success ? "Maximized \(command.target)" : "Failed to maximize \(command.target)"
@@ -336,6 +350,13 @@ class WindowPositioner {
     private func focusWindow(_ command: WindowCommand) -> CommandResult {
         guard let windows = getTargetWindows(command.target), let window = windows.first else {
             return CommandResult(success: false, message: "Could not find window for '\(command.target)'", command: command)
+        }
+        
+        // CRITICAL: Unminimize window before focusing it
+        if windowManager.isWindowMinimized(window) {
+            print("🔄 Unminimizing \(command.target) before focusing")
+            _ = windowManager.restoreWindow(window)
+            Thread.sleep(forTimeInterval: 0.1)
         }
         
         let success = windowManager.focusWindow(window)
@@ -410,7 +431,7 @@ class WindowPositioner {
     private func arrangeWorkspace(_ command: WindowCommand) -> CommandResult {
         // For intelligent cascade arrangements
         if command.target.lowercased() == "cascade" || command.target.lowercased() == "intelligent" {
-            let allWindows = windowManager.getAllWindows().filter { windowManager.isWindowVisible($0) }
+            let allWindows = windowManager.getAllWindows()
             
             let userContext = UserContext(
                 activity: command.parameters?["activity"],
@@ -751,10 +772,10 @@ class WindowPositioner {
         let windows: [WindowInfo]
         
         if command.target.lowercased() == "all" || command.target.lowercased() == "visible" {
-            // Tile all visible windows
-            windows = windowManager.getAllWindows().filter { windowManager.isWindowVisible($0) }
+            // Tile ALL windows (including minimized ones - we'll unminimize them)
+            windows = windowManager.getAllWindows()
         } else {
-            // Tile windows for specific app
+            // Tile windows for specific app (including minimized ones)
             windows = windowManager.getWindowsForApp(named: command.target)
         }
         
@@ -765,6 +786,26 @@ class WindowPositioner {
         let displayIndex = command.display ?? 0
         let screenBounds = getVisibleDisplayBounds(displayIndex)
         let gap: CGFloat = 10.0
+        
+        // PHASE 1: Unminimize ALL windows first (same as cascade)
+        print("\n🔄 PHASE 1: Unminimizing all windows")
+        print("===================================")
+        for window in windows {
+            if windowManager.isWindowMinimized(window) {
+                print("🔄 Unminimizing \(window.appName)...")
+                let restoreSuccess = windowManager.restoreWindow(window)
+                print("  Result: \(restoreSuccess ? "✅ Success" : "❌ Failed")")
+            } else {
+                print("✅ \(window.appName) already visible")
+            }
+        }
+        
+        // Wait for all unminimize operations to complete
+        print("⏳ Waiting for unminimize operations to complete...")
+        Thread.sleep(forTimeInterval: 1.0)
+        
+        print("\n📐 PHASE 2: Positioning all windows")
+        print("==================================")
         
         // Determine tiling pattern based on window count
         let windowCount = windows.count
@@ -865,10 +906,10 @@ class WindowPositioner {
         let windows: [WindowInfo]
         
         if command.target.lowercased() == "all" || command.target.lowercased() == "visible" {
-            // Cascade all visible windows
-            windows = windowManager.getAllWindows().filter { windowManager.isWindowVisible($0) }
+            // Cascade ALL windows (including minimized ones - we'll unminimize them)
+            windows = windowManager.getAllWindows()
         } else {
-            // Cascade windows for specific app
+            // Cascade windows for specific app (including minimized ones)
             windows = windowManager.getWindowsForApp(named: command.target)
         }
         
@@ -877,7 +918,9 @@ class WindowPositioner {
         }
         
         let displayIndex = command.display ?? 0
-        let screenBounds = getVisibleDisplayBounds(displayIndex)
+        // Use FULL screen bounds for 100% coverage (including menu bar area)
+        let screenBounds = getFullDisplayBounds(displayIndex)
+        print("🖥️ Using FULL screen bounds: \(screenBounds.size) for 100% coverage")
         
         // Determine cascade style from parameters
         let cascadeStyle: CascadeConfiguration.CascadeStyle
@@ -941,7 +984,31 @@ class WindowPositioner {
         var results: [String] = []
         var arrangedBounds: [String: CGRect] = [:]
         
-        // Apply the flexible arrangements - match by app name, not index
+        // PHASE 1: Unminimize ALL windows first
+        print("\n🔄 PHASE 1: Unminimizing all windows")
+        print("===================================")
+        for arrangement in flexibleArrangements {
+            guard let window = windows.first(where: { $0.appName == arrangement.window }) else {
+                print("⚠️ Could not find window for arrangement: \(arrangement.window)")
+                continue
+            }
+            
+            if windowManager.isWindowMinimized(window) {
+                print("🔄 Unminimizing \(window.appName)...")
+                let restoreSuccess = windowManager.restoreWindow(window)
+                print("  Result: \(restoreSuccess ? "✅ Success" : "❌ Failed")")
+            } else {
+                print("✅ \(window.appName) already visible")
+            }
+        }
+        
+        // Wait for all unminimize operations to complete
+        print("⏳ Waiting for unminimize operations to complete...")
+        Thread.sleep(forTimeInterval: 1.0)
+        
+        // PHASE 2: Position ALL windows
+        print("\n📐 PHASE 2: Positioning all windows")
+        print("==================================")
         for arrangement in flexibleArrangements {
             guard let window = windows.first(where: { $0.appName == arrangement.window }) else {
                 print("⚠️ Could not find window for arrangement: \(arrangement.window)")
@@ -962,7 +1029,10 @@ class WindowPositioner {
             let bounds = CGRect(origin: position, size: size)
             arrangedBounds[window.appName] = bounds
             
-            if windowManager.setWindowBounds(window, bounds: bounds) {
+            print("📍 Positioning \(window.appName) to \(bounds)")
+            
+            // Disable validation since we're using full screen bounds for 100% coverage
+            if windowManager.setWindowBounds(window, bounds: bounds, validate: false) {
                 results.append("Cascaded \(window.appName) (\(arrangement.visibility.rawValue) visibility)")
                 
                 // Focus windows based on layer (highest layer = most visible = focus last)
@@ -1047,6 +1117,15 @@ class WindowPositioner {
             return NSScreen.main?.visibleFrame ?? .zero
         }
         return screens[displayIndex].visibleFrame
+    }
+    
+    // NEW: Get full screen bounds for 100% coverage (including menu bar area)
+    private func getFullDisplayBounds(_ displayIndex: Int) -> CGRect {
+        let screens = NSScreen.screens
+        guard displayIndex < screens.count else {
+            return NSScreen.main?.frame ?? .zero
+        }
+        return screens[displayIndex].frame
     }
     
     private func getBundleID(for appName: String) -> String? {

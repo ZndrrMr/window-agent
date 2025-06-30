@@ -77,14 +77,21 @@ class WindowManager {
             return []
         }
         
+        print("🔍 WindowManager DEBUG: Found \(windows.count) raw windows for PID \(pid)")
+        
         var windowInfos: [WindowInfo] = []
         
-        for window in windows {
+        for (index, window) in windows.enumerated() {
+            print("🔍 WindowManager DEBUG: Processing window \(index)")
             if let windowInfo = createWindowInfo(from: window, appPID: pid) {
                 windowInfos.append(windowInfo)
+                print("🔍 WindowManager DEBUG: ✅ Window \(index) included: '\(windowInfo.title)'")
+            } else {
+                print("🔍 WindowManager DEBUG: ❌ Window \(index) excluded (createWindowInfo returned nil)")
             }
         }
         
+        print("🔍 WindowManager DEBUG: Final count: \(windowInfos.count) windows")
         return windowInfos
     }
     
@@ -93,18 +100,23 @@ class WindowManager {
         var positionRef: CFTypeRef?
         var sizeRef: CFTypeRef?
         
-        // Get window title
-        AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &titleRef)
-        let title = titleRef as? String ?? "Untitled"
+        // Check if this is a minimized window first
+        var minimizedRef: CFTypeRef?
+        let minimizedResult = AXUIElementCopyAttributeValue(window, kAXMinimizedAttribute as CFString, &minimizedRef)
+        let isMinimized = (minimizedResult == .success && (minimizedRef as? Bool) == true)
         
-        // Get window position
+        // Get window title (minimized windows may have accessibility issues)
+        let titleResult = AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &titleRef)
+        let title = titleRef as? String ?? (isMinimized ? "Minimized Window" : "Untitled")
+        
+        // Get window position (may be inaccessible for minimized windows)
         AXUIElementCopyAttributeValue(window, kAXPositionAttribute as CFString, &positionRef)
         var position = CGPoint.zero
         if let positionValue = positionRef {
             AXValueGetValue(positionValue as! AXValue, .cgPoint, &position)
         }
         
-        // Get window size
+        // Get window size (may be inaccessible for minimized windows)
         AXUIElementCopyAttributeValue(window, kAXSizeAttribute as CFString, &sizeRef)
         var size = CGSize.zero
         if let sizeValue = sizeRef {
@@ -115,6 +127,10 @@ class WindowManager {
         let appName = NSRunningApplication(processIdentifier: appPID)?.localizedName ?? "Unknown App"
         
         let bounds = CGRect(origin: position, size: size)
+        
+        // CRITICAL: Always include windows, even minimized ones with accessibility issues
+        print("🔍 WindowManager DEBUG: Creating WindowInfo for '\(title)' (minimized: \(isMinimized))")
+        
         return WindowInfo(title: title, appName: appName, bounds: bounds, windowRef: window)
     }
     
@@ -204,6 +220,18 @@ class WindowManager {
         
         let result = AXUIElementSetAttributeValue(windowInfo.windowRef, kAXMinimizedAttribute as CFString, kCFBooleanTrue)
         return result == .success
+    }
+    
+    func isWindowMinimized(_ windowInfo: WindowInfo) -> Bool {
+        guard checkAccessibilityPermissions() else { return false }
+        
+        var minimizedValue: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(windowInfo.windowRef, kAXMinimizedAttribute as CFString, &minimizedValue)
+        
+        if result == .success, let minimized = minimizedValue as? Bool {
+            return minimized
+        }
+        return false
     }
     
     func zoomWindow(_ windowInfo: WindowInfo) -> Bool {
@@ -350,16 +378,51 @@ class WindowManager {
     func restoreWindow(_ windowInfo: WindowInfo) -> Bool {
         guard checkAccessibilityPermissions() else { return false }
         
+        print("🔄 Restoring window: '\(windowInfo.title)'")
+        
         // Check if window is minimized
         var isMinimized: CFTypeRef?
         let minResult = AXUIElementCopyAttributeValue(windowInfo.windowRef, kAXMinimizedAttribute as CFString, &isMinimized)
         
         if minResult == .success, let minimized = isMinimized as? Bool, minimized {
-            // Unminimize the window
-            let result = AXUIElementSetAttributeValue(windowInfo.windowRef, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
-            return result == .success
+            print("  Window is minimized, restoring...")
+            
+            // Step 1: Unminimize the window
+            let restoreResult = AXUIElementSetAttributeValue(windowInfo.windowRef, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
+            print("  Restore API result: \(restoreResult == .success ? "✅" : "❌")")
+            
+            if restoreResult != .success {
+                return false
+            }
+            
+            // Step 2: Activate the app (critical for visibility)
+            if let bundleID = getBundleID(for: windowInfo.appName),
+               let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first {
+                print("  🎯 Activating \(windowInfo.appName)...")
+                app.activate()
+                Thread.sleep(forTimeInterval: 0.2)
+            }
+            
+            // Step 3: Focus/raise the window
+            print("  🎯 Focusing restored window...")
+            let focusResult = AXUIElementPerformAction(windowInfo.windowRef, kAXRaiseAction as CFString)
+            print("  Focus result: \(focusResult == .success ? "✅" : "❌")")
+            
+            // Step 4: Verify the window is actually restored
+            var verifyMinimized: CFTypeRef?
+            let verifyResult = AXUIElementCopyAttributeValue(windowInfo.windowRef, kAXMinimizedAttribute as CFString, &verifyMinimized)
+            let stillMinimized = (verifyResult == .success && (verifyMinimized as? Bool) == true)
+            
+            if stillMinimized {
+                print("  ❌ Window still appears minimized after restore")
+                return false
+            }
+            
+            print("  ✅ Window successfully restored and should be visible")
+            return true
         }
         
+        print("  Window not minimized, bringing to front...")
         // If not minimized, bring it to front
         return focusWindow(windowInfo)
     }
