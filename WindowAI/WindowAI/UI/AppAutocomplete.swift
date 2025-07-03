@@ -45,7 +45,7 @@ class AppAutocomplete {
             DispatchQueue.main.async {
                 self.installedApps = uniqueApps.sorted { $0.name.lowercased() < $1.name.lowercased() }
                 self.isLoaded = true
-                print("🔍 Loaded \(self.installedApps.count) applications for autocomplete")
+                // Loaded applications for autocomplete
             }
         }
     }

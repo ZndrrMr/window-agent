@@ -235,10 +235,12 @@ class FlexibleLayoutEngine {
             maxApps: 4
         )
         
-        print("🎯 FOCUS-AWARE LAYOUT:")
+        print("🎯 FOCUS-AWARE LAYOUT ENGINE STARTING:")
         print("  📝 Context: '\(context)'")
         print("  🎯 Focused: \(focusedApp ?? "Auto-detect")")
-        print("  📱 Apps: \(relevantApps.joined(separator: ", "))")
+        print("  📱 Input windows: \(windows.joined(separator: ", "))")
+        print("  📱 Relevant apps: \(relevantApps.joined(separator: ", "))")
+        print("  📐 Screen size: \(Int(screenSize.width))×\(Int(screenSize.height))")
         
         // STEP 2: Determine focused app (use provided or auto-detect primary)
         let actualFocusedApp: String
@@ -309,24 +311,32 @@ class FlexibleLayoutEngine {
         var cascadeApps: [String] = []
         var cornerApps: [String] = []
         
+        print("🎭 ROLE ASSIGNMENT PHASE:")
+        
         // Assign roles based on archetype and focus
         for (app, archetype) in appArchetypes {
             if app == focusedApp {
                 primaryApp = app
+                print("  👑 PRIMARY: \(app) (focused \(archetype.rawValue))")
             } else {
                 switch archetype {
                 case .textStream:
                     sideColumnApps.append(app)
+                    print("  📏 SIDE COLUMN: \(app) (\(archetype.rawValue))")
                 case .contentCanvas:
                     cascadeApps.append(app)
+                    print("  🪟 CASCADE: \(app) (\(archetype.rawValue))")
                 case .codeWorkspace:
                     if app != focusedApp {
                         cascadeApps.append(app)
+                        print("  🪟 CASCADE: \(app) (\(archetype.rawValue))")
                     }
                 case .glanceableMonitor:
                     cornerApps.append(app)
+                    print("  📍 CORNER: \(app) (\(archetype.rawValue))")
                 case .unknown:
                     cascadeApps.append(app)
+                    print("  🪟 CASCADE: \(app) (unknown archetype)")
                 }
             }
         }
@@ -334,10 +344,14 @@ class FlexibleLayoutEngine {
         // Step 4: Build layout based on focused archetype pattern
         var arrangements: [FlexibleWindowArrangement] = []
         
+        print("🏗️ LAYOUT GENERATION PHASE:")
+        
         // Add focused app first (always on top)
         if let primary = primaryApp {
             let primarySize = getPrimarySize(for: focusedArchetype, appCount: apps.count)
             let primaryPosition = getPrimaryPosition(for: focusedArchetype)
+            
+            print("  👑 BUILDING PRIMARY: \(primary)")
             
             arrangements.append(FlexibleWindowArrangement(
                 window: primary,
@@ -349,10 +363,15 @@ class FlexibleLayoutEngine {
         }
         
         // Add side column apps (text streams)
+        if !sideColumnApps.isEmpty {
+            print("  📏 BUILDING SIDE COLUMNS (\(sideColumnApps.count) apps):")
+        }
         var sideColumnIndex = 0
         for sideApp in sideColumnApps {
             let position = getSideColumnPosition(index: sideColumnIndex, total: sideColumnApps.count)
             let size = getSideColumnSize(for: .textStream, isFocused: sideApp == focusedApp)
+            
+            print("    📱 \(sideApp) - side column \(sideColumnIndex + 1)")
             
             arrangements.append(FlexibleWindowArrangement(
                 window: sideApp,
@@ -365,9 +384,14 @@ class FlexibleLayoutEngine {
         }
         
         // Add cascade apps (content canvas, other code workspaces)
+        if !cascadeApps.isEmpty {
+            print("  🪟 BUILDING CASCADE LAYER (\(cascadeApps.count) apps):")
+        }
         var cascadeIndex = 0
         for cascadeApp in cascadeApps {
             let archetype = classifier.classifyApp(cascadeApp)
+            print("    📱 \(cascadeApp) - cascade position \(cascadeIndex + 1) (\(archetype.rawValue))")
+            
             let position = getCascadePosition(
                 index: cascadeIndex,
                 total: cascadeApps.count,
@@ -414,6 +438,14 @@ class FlexibleLayoutEngine {
         }
         
         // Return natural cascade arrangements without forced tessellation
+        print("✅ LAYOUT COMPLETE:")
+        print("  📊 Total arrangements: \(arrangements.count)")
+        print("  👑 Primary: \(primaryApp ?? "none")")
+        print("  📏 Side columns: \(sideColumnApps.count)")
+        print("  🪟 Cascade layers: \(cascadeApps.count)")
+        print("  📍 Corner apps: \(cornerApps.count)")
+        print("====================================================")
+        
         return arrangements
     }
     
@@ -485,6 +517,11 @@ class FlexibleLayoutEngine {
         focusedArchetype: AppArchetype,
         hasSideColumns: Bool
     ) -> FlexiblePosition {
+        print("📍 CALCULATING CASCADE POSITION:")
+        print("  📊 Window index: \(index) of \(total)")
+        print("  🎯 Focused archetype: \(focusedArchetype.rawValue)")
+        print("  📐 Has side columns: \(hasSideColumns)")
+        
         // SCREEN-MAXIMIZED cascade positioning - fill entire screen space
         let baseX: Double
         let baseY: Double
@@ -508,15 +545,21 @@ class FlexibleLayoutEngine {
             baseY = 0.02  // Always start from top edge
         }
         
+        print("  📍 Base position for \(focusedArchetype.rawValue): (\(String(format: "%.2f", baseX)), \(String(format: "%.2f", baseY)))")
+        
         // OPTIMIZED cascade offsets - tighter spacing to maximize coverage
         let offsetX = Double(index) * 0.08  // Reduced from 0.15 to fit more windows
         let offsetY = Double(index) * 0.06  // Reduced from 0.15 for better coverage
         
+        print("  ↗️ Offset for index \(index): (+\(String(format: "%.2f", offsetX)), +\(String(format: "%.2f", offsetY)))")
+        
+        let finalX = min(baseX + offsetX, 0.95)
+        let finalY = min(baseY + offsetY, 0.25)
+        
+        print("  🎯 Final position: (\(String(format: "%.2f", finalX)), \(String(format: "%.2f", finalY)))")
+        
         // SCREEN UTILIZATION: Allow windows to span entire screen width
-        return .percentage(
-            x: min(baseX + offsetX, 0.95),  // Increased to 0.95 to reach near screen edge
-            y: min(baseY + offsetY, 0.25)   // Reduced to 0.25 to keep cascade tighter at top
-        )
+        return .percentage(x: finalX, y: finalY)
     }
     
     private static func getCascadeSize(
@@ -524,27 +567,43 @@ class FlexibleLayoutEngine {
         isFocused: Bool,
         focusedArchetype: AppArchetype
     ) -> FlexibleSize {
+        print("📏 CALCULATING CASCADE SIZE:")
+        print("  📱 Archetype: \(archetype.rawValue)")
+        print("  🎯 Is focused: \(isFocused)")
+        print("  🎪 Focused archetype: \(focusedArchetype.rawValue)")
+        
         if isFocused {
-            return getPrimarySize(for: archetype, appCount: 3)
+            let primarySize = getPrimarySize(for: archetype, appCount: 3)
+            print("  👑 PRIMARY SIZE (focused app)")
+            return primarySize
         }
         
         // SCREEN-MAXIMIZED sizes for non-focused cascade apps
+        let size: FlexibleSize
         switch archetype {
         case .contentCanvas:
             // Browsers expanded for maximum screen coverage and functionality
-            return .percentage(width: 0.65, height: 0.95)  // Further increased from 0.55x0.90
+            size = .percentage(width: 0.65, height: 0.95)  // Further increased from 0.55x0.90
         case .codeWorkspace:
             // Secondary IDEs get maximum space for productivity
-            return .percentage(width: 0.70, height: 0.95)  // Further increased from 0.60x0.90
+            size = .percentage(width: 0.70, height: 0.95)  // Further increased from 0.60x0.90
         case .textStream:
             // Terminal/console apps expanded significantly beyond minimal size
-            return .percentage(width: 0.55, height: 0.95)  // Further increased from 0.45x0.90
+            size = .percentage(width: 0.55, height: 0.95)  // Further increased from 0.45x0.90
         case .glanceableMonitor:
             // System monitors expanded to maximize available space
-            return .percentage(width: 0.45, height: 0.90)  // Further increased from 0.35x0.85
+            size = .percentage(width: 0.45, height: 0.90)  // Further increased from 0.35x0.85
         default:
-            return .percentage(width: 0.60, height: 0.90)  // Further increased default sizes
+            size = .percentage(width: 0.60, height: 0.90)  // Further increased default sizes
         }
+        
+        // Extract width/height for logging
+        if case .percentage(let width) = size.width,
+           case .percentage(let height) = size.height {
+            print("  📐 Calculated size: \(String(format: "%.0f", width * 100))%w × \(String(format: "%.0f", height * 100))%h")
+        }
+        
+        return size
     }
     
     private static func getCornerPosition(index: Int) -> FlexiblePosition {

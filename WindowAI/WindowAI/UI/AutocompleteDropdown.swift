@@ -45,7 +45,7 @@ class AutocompleteDropdown: NSView {
     }
     
     func updateSuggestions(_ newSuggestions: [AppSuggestion]) {
-        print("🎯 AutocompleteDropdown.updateSuggestions called with \(newSuggestions.count) suggestions")
+        // Removed verbose debug logging
         suggestions = newSuggestions
         selectedIndex = 0
         
@@ -54,38 +54,38 @@ class AutocompleteDropdown: NSView {
         suggestionViews.removeAll()
         
         if suggestions.isEmpty {
-            print("❌ No suggestions, hiding dropdown")
+            // No suggestions, hiding dropdown
             isHidden = true
             return
         }
         
-        print("✅ Creating \(suggestions.count) suggestion views")
+        // Creating suggestion views
         
         // Create new suggestion views
         for (index, suggestion) in suggestions.enumerated() {
             let suggestionView = AutocompleteSuggestionView(suggestion: suggestion)
             suggestionView.isSelected = (index == selectedIndex)
             suggestionView.onClicked = { [weak self] in
-                print("🖱️ Suggestion clicked: \(suggestion.name)")
+                // Suggestion clicked
                 self?.delegate?.autocompleteDropdown(self!, didSelect: suggestion)
             }
             
             addSubview(suggestionView)
             suggestionViews.append(suggestionView)
-            print("  📱 Created view for: \(suggestion.name)")
+            // Created view
         }
         
         // Update layout
         layoutSuggestions()
         isHidden = false
-        print("📐 Dropdown frame after layout: \(frame), hidden: \(isHidden)")
+        // Layout complete
     }
     
     private func layoutSuggestions() {
         let itemCount = min(suggestions.count, maxVisibleItems)
         let totalHeight = CGFloat(itemCount) * itemHeight
         
-        print("📏 Layout: itemCount=\(itemCount), totalHeight=\(totalHeight), frameWidth=\(frame.width)")
+        // Layout calculations
         
         // Update dropdown size
         frame.size.height = totalHeight
@@ -96,10 +96,10 @@ class AutocompleteDropdown: NSView {
             let y = totalHeight - CGFloat(index + 1) * itemHeight
             let viewFrame = NSRect(x: 0, y: y, width: frame.width, height: itemHeight)
             view.frame = viewFrame
-            print("  📱 View \(index) (\(suggestions[index].name)): frame=\(viewFrame)")
+            // Positioning view
         }
         
-        print("📐 Final dropdown frame: \(frame)")
+        // Layout complete
     }
     
     func selectNext() {
@@ -214,12 +214,12 @@ class AutocompleteSuggestionView: NSView {
     }
     
     @objc private func viewClicked() {
-        print("🎯 View clicked via gesture recognizer")
+        // View clicked
         onClicked?()
     }
     
     override func mouseDown(with event: NSEvent) {
-        print("🖱️ Mouse down in suggestion view")
+        // Mouse down
         onClicked?()
         super.mouseDown(with: event)
     }

@@ -445,9 +445,7 @@ extension CommandWindow: NSTextFieldDelegate {
     func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
         // Handle Tab key specifically for autocomplete
         if commandSelector == #selector(NSStandardKeyBindingResponding.insertTab(_:)) && isShowingAutocomplete {
-            print("🔥 Tab key intercepted in text field!")
             if let suggestion = autocompleteWindow.getSelectedSuggestion() {
-                print("🎯 Selected suggestion: \(suggestion.name)")
                 completeWithSuggestion(suggestion)
                 return true // Consume the event
             }
@@ -466,9 +464,7 @@ extension CommandWindow: NSTextFieldDelegate {
         }
         
         let query = String(lastWord)
-        print("🔍 Autocomplete query: '\(query)'")
         let suggestions = AppAutocomplete.shared.getSuggestions(for: query)
-        print("📱 Found \(suggestions.count) suggestions: \(suggestions.map { $0.name })")
         
         if suggestions.isEmpty {
             autocompleteWindow.hideDropdown()
@@ -478,7 +474,6 @@ extension CommandWindow: NSTextFieldDelegate {
     }
     
     private func showAutocomplete(with suggestions: [AppSuggestion]) {
-        print("💬 Showing autocomplete with \(suggestions.count) suggestions")
         autocompleteWindow.showWithSuggestions(suggestions, below: self)
         isShowingAutocomplete = true
     }
@@ -495,7 +490,6 @@ extension CommandWindow: AutocompleteDropdownDelegate {
     }
     
     private func completeWithSuggestion(_ suggestion: AppSuggestion) {
-        print("💫 Completing with suggestion: \(suggestion.name)")
         let currentText = commandTextField.stringValue
         let words = currentText.split(separator: " ").map(String.init)
         
@@ -508,8 +502,6 @@ extension CommandWindow: AutocompleteDropdownDelegate {
             commandTextField.stringValue = suggestion.name + " "
         }
         
-        print("📝 New text field value: '\(commandTextField.stringValue)'")
-        
         // Cancel any pending styling timer since we're completing now
         stylingTimer?.invalidate()
         stylingTimer = nil
@@ -519,7 +511,6 @@ extension CommandWindow: AutocompleteDropdownDelegate {
             if let editor = self.commandTextField.currentEditor() as? NSTextView {
                 let length = self.commandTextField.stringValue.count
                 editor.setSelectedRange(NSRange(location: length, length: 0))
-                print("🎯 Cursor positioned at: \(length)")
                 
                 // Delay styling to avoid interference with cursor positioning
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
@@ -530,7 +521,6 @@ extension CommandWindow: AutocompleteDropdownDelegate {
         
         autocompleteWindow.hideDropdown()
         isShowingAutocomplete = false
-        print("✅ Autocomplete hidden")
     }
 }
 
@@ -541,12 +531,8 @@ extension CommandWindow {
         if isShowingAutocomplete {
             switch event.keyCode {
             case 48: // Tab key
-                print("🔥 Tab key pressed - showing autocomplete: \(isShowingAutocomplete)")
                 if let suggestion = autocompleteWindow.getSelectedSuggestion() {
-                    print("🎯 Selected suggestion: \(suggestion.name)")
                     completeWithSuggestion(suggestion)
-                } else {
-                    print("❌ No selected suggestion found")
                 }
                 return
             case 125: // Down arrow

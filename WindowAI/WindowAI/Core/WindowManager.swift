@@ -77,21 +77,13 @@ class WindowManager {
             return []
         }
         
-        print("🔍 WindowManager DEBUG: Found \(windows.count) raw windows for PID \(pid)")
-        
         var windowInfos: [WindowInfo] = []
         
-        for (index, window) in windows.enumerated() {
-            print("🔍 WindowManager DEBUG: Processing window \(index)")
+        for window in windows {
             if let windowInfo = createWindowInfo(from: window, appPID: pid) {
                 windowInfos.append(windowInfo)
-                print("🔍 WindowManager DEBUG: ✅ Window \(index) included: '\(windowInfo.title)'")
-            } else {
-                print("🔍 WindowManager DEBUG: ❌ Window \(index) excluded (createWindowInfo returned nil)")
             }
         }
-        
-        print("🔍 WindowManager DEBUG: Final count: \(windowInfos.count) windows")
         return windowInfos
     }
     
@@ -106,7 +98,7 @@ class WindowManager {
         let isMinimized = (minimizedResult == .success && (minimizedRef as? Bool) == true)
         
         // Get window title (minimized windows may have accessibility issues)
-        let titleResult = AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &titleRef)
+        _ = AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &titleRef)
         let title = titleRef as? String ?? (isMinimized ? "Minimized Window" : "Untitled")
         
         // Get window position (may be inaccessible for minimized windows)
@@ -129,7 +121,6 @@ class WindowManager {
         let bounds = CGRect(origin: position, size: size)
         
         // CRITICAL: Always include windows, even minimized ones with accessibility issues
-        print("🔍 WindowManager DEBUG: Creating WindowInfo for '\(title)' (minimized: \(isMinimized))")
         
         return WindowInfo(title: title, appName: appName, bounds: bounds, windowRef: window)
     }
