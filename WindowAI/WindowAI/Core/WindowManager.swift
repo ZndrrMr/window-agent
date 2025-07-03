@@ -80,14 +80,35 @@ class WindowManager {
             guard let bundleId = app.bundleIdentifier,
                   let appName = app.localizedName else { return false }
             
-            // Skip system apps, background processes  
+            // Skip true system apps, but allow user-manageable Apple apps
+            let allowedAppleApps = [
+                "com.apple.Terminal",
+                "com.apple.TextEdit", 
+                "com.apple.Preview",
+                "com.apple.QuickTimePlayerX",
+                "com.apple.Calculator",
+                "com.apple.Notes",
+                "com.apple.Music",
+                "com.apple.TV",
+                "com.apple.Photos",
+                "com.apple.Maps",
+                "com.apple.Calendar",
+                "com.apple.Contacts",
+                "com.apple.Mail",
+                "com.apple.FaceTime",
+                "com.apple.Messages"
+            ]
+            
+            let isSystemApp = bundleId.hasPrefix("com.apple.") && !allowedAppleApps.contains(bundleId)
+            let isBackgroundProcess = !["Dock", "Finder", "SystemUIServer", "WindowServer"].contains(appName) &&
+                                    !bundleId.contains("com.apple.dock") &&
+                                    !bundleId.contains("com.apple.systemuiserver")
+            
             return app.activationPolicy == .regular &&
-                   !bundleId.hasPrefix("com.apple.") &&
-                   !["Dock", "Finder", "SystemUIServer", "WindowServer"].contains(appName) &&
-                   !bundleId.contains("com.apple.dock") &&
-                   !bundleId.contains("com.apple.systemuiserver")
+                   !isSystemApp &&
+                   isBackgroundProcess
         }
-        .prefix(15) // Limit to first 15 relevant apps
+        .prefix(20) // Increased limit to accommodate more Apple apps
         .map { $0 }
     }
     
