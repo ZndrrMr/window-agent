@@ -23,12 +23,12 @@ class LLMService {
     }
     
     private func setupGeminiService() {
-        // TODO: Get API key from user preferences or environment
-        // For now, this will need to be set by the user in preferences
-        let apiKey = preferences.geminiAPIKey ?? ""
-        if !apiKey.isEmpty {
-            geminiService = GeminiLLMService(apiKey: apiKey)
-        }
+        // Use provided API key
+        let apiKey = "AIzaSyArfzWlmVOgdpjBD-6hV309h8RDA_yiX3s"
+        geminiService = GeminiLLMService(apiKey: apiKey)
+        
+        // Also update preferences
+        preferences.geminiAPIKey = apiKey
     }
     
     // MARK: - Public API

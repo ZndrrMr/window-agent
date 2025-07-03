@@ -1,5 +1,6 @@
 import Cocoa
 import SwiftUI
+import Foundation
 
 class SettingsWindow: NSWindow {
     private let preferences = UserPreferences.shared
