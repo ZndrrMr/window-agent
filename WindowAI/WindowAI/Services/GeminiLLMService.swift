@@ -222,7 +222,7 @@ class GeminiLLMService {
             tools: convertToGeminiTools(WindowManagementTools.allTools),
             systemInstruction: GeminiSystemInstruction(parts: [GeminiPart(text: systemPrompt)]),
             generationConfig: GeminiGenerationConfig(
-                temperature: 0.1,  // Low temperature for more deterministic function calling
+                temperature: 0.0,  // Zero temperature for deterministic function calling
                 maxOutputTokens: maxTokens
             )
         )
@@ -270,6 +270,8 @@ class GeminiLLMService {
         // Get intelligent pattern hints
         let patternHints = buildPatternHints(context: context)
         var prompt = """
+        CRITICAL: You MUST ALWAYS use the provided function tools. NEVER respond with just text explanations.
+        
         You are WindowAI, an intelligent macOS window management assistant that learns from user behavior to create the perfect window arrangements.
         
         - Unless the user actively says they only want part of the screen filled, you MUST achieve 100% screen coverage collectively across all windows
@@ -524,6 +526,14 @@ class GeminiLLMService {
         
         REMEMBER: SCREEN UTILIZATION IS IMPORTANT - expand all windows to achieve 100% coverage!
         
+        FUNCTION CALLING REQUIREMENTS:
+        - ALWAYS use the provided function tools for ANY window management request
+        - NEVER explain what you will do - just use the functions immediately
+        - For "move terminal to the left" → call snap_window(app_name: "Terminal", position: "left")
+        - For "resize Arc bigger" → call resize_window(app_name: "Arc", size: "large")
+        - For positioning commands → use flexible_position for precise control
+        - MANDATORY: Every user request MUST result in function calls, not text responses
+        
         """
         
         if let context = context {
@@ -713,8 +723,10 @@ class GeminiLLMService {
             // If no function calls were made, extract any text response
             let textResponses = firstCandidate.content.parts.compactMap { $0.text }.joined(separator: " ")
             if !textResponses.isEmpty {
-                print("  ❌ No function calls, just text: \(textResponses)")
-                throw GeminiLLMError.noToolsUsed(textResponses)
+                print("  ❌ FUNCTION CALLING FAILED: Gemini responded with text instead of using tools")
+                print("  📝 Text response: \(textResponses)")
+                print("  🔧 HINT: The model should have called snap_window, flexible_position, or other tools")
+                throw GeminiLLMError.noToolsUsed("Gemini generated text explanation instead of function calls: \(textResponses)")
             } else {
                 print("  ❌ No commands generated")
                 throw GeminiLLMError.noCommandsGenerated
