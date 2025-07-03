@@ -186,11 +186,17 @@ class WindowAIController: HotkeyManagerDelegate, LLMServiceDelegate {
         
         // Build window summaries with display info
         let visibleWindows = allWindows.map { window in
-            LLMContext.WindowSummary(
+            let isVisible = windowManager.isWindowVisible(window)
+            let isMinimized = !isVisible
+            
+            // Debug: Log window state to verify boolean logic fix
+            print("🔍 Window State: \(window.appName) - Visible: \(isVisible), Minimized: \(isMinimized)")
+            
+            return LLMContext.WindowSummary(
                 title: window.title,
                 appName: window.appName,
                 bounds: window.bounds,
-                isMinimized: windowManager.isWindowVisible(window),
+                isMinimized: isMinimized,
                 displayIndex: windowManager.getDisplayForWindow(window)
             )
         }
@@ -204,6 +210,16 @@ class WindowAIController: HotkeyManagerDelegate, LLMServiceDelegate {
         }.joined(separator: ", ")
         
         print("📱 Display Configuration: \(displayDescriptions)")
+        
+        // Debug: Print current window positions and sizes
+        print("\n🪟 CURRENT WINDOW LAYOUT:")
+        for window in allWindows {
+            let bounds = window.bounds
+            let widthPercent = (bounds.width / displays.first!.frame.width) * 100
+            let heightPercent = (bounds.height / displays.first!.frame.height) * 100
+            print("  📱 \(window.appName): \(Int(bounds.origin.x)),\(Int(bounds.origin.y)) - \(Int(bounds.width))x\(Int(bounds.height)) (\(String(format: "%.0f", widthPercent))%w × \(String(format: "%.0f", heightPercent))%h)")
+        }
+        print("")
         
         return LLMContext(
             runningApps: runningApps,

@@ -84,43 +84,17 @@ struct AnyCodable: Codable {
 class WindowManagementTools {
     
     static let allTools: [LLMTool] = [
-        moveWindowTool,
         resizeWindowTool,
         openAppTool,
         closeAppTool,
         focusWindowTool,
-        arrangeWorkspaceTool,
         snapWindowTool,
         minimizeWindowTool,
         maximizeWindowTool,
-        cascadeWindowsTool,
         tileWindowsTool,
         flexiblePositionTool
     ]
     
-    // Move window to specific position
-    static let moveWindowTool = LLMTool(
-        name: "move_window",
-        description: "Move a window to a specific position on the screen",
-        input_schema: LLMTool.ToolInputSchema(
-            properties: [
-                "app_name": LLMTool.ToolInputSchema.PropertyDefinition(
-                    type: "string",
-                    description: "Name of the application whose window to move"
-                ),
-                "position": LLMTool.ToolInputSchema.PropertyDefinition(
-                    type: "string",
-                    description: "Position where to move the window",
-                    options: ["left", "right", "top", "bottom", "center", "top-left", "top-right", "bottom-left", "bottom-right", "left-third", "middle-third", "right-third"]
-                ),
-                "display": LLMTool.ToolInputSchema.PropertyDefinition(
-                    type: "integer",
-                    description: "Display index (0 for main display, 1 for secondary, etc.). Optional."
-                )
-            ],
-            required: ["app_name", "position"]
-        )
-    )
     
     // Resize window to specific size
     static let resizeWindowTool = LLMTool(
@@ -139,11 +113,11 @@ class WindowManagementTools {
                 ),
                 "custom_height": LLMTool.ToolInputSchema.PropertyDefinition(
                     type: "string",
-                    description: "Custom height as percentage of screen (e.g., '90' for 90% height). Only used when size='custom'"
+                    description: "Custom height as percentage (e.g., '90' for 90% height) or pixels (e.g., '800px'). Supports decimals (e.g., '67.5'). Only used when size='custom'"
                 ),
                 "custom_width": LLMTool.ToolInputSchema.PropertyDefinition(
                     type: "string",
-                    description: "Custom width as percentage of screen (e.g., '50' for 50% width). Only used when size='custom'"
+                    description: "Custom width as percentage (e.g., '50' for 50% width) or pixels (e.g., '1200px'). Supports decimals (e.g., '33.3'). Only used when size='custom'"
                 ),
                 "preserve_width": LLMTool.ToolInputSchema.PropertyDefinition(
                     type: "boolean",
@@ -221,21 +195,6 @@ class WindowManagementTools {
         )
     )
     
-    // Arrange workspace for specific context
-    static let arrangeWorkspaceTool = LLMTool(
-        name: "arrange_workspace",
-        description: "Arrange windows for a specific workflow or context",
-        input_schema: LLMTool.ToolInputSchema(
-            properties: [
-                "context": LLMTool.ToolInputSchema.PropertyDefinition(
-                    type: "string",
-                    description: "The workflow context to arrange for",
-                    options: ["coding", "writing", "research", "communication", "design", "focus", "presentation", "cleanup"]
-                )
-            ],
-            required: ["context"]
-        )
-    )
     
     // Snap window (move and resize in one operation)
     static let snapWindowTool = LLMTool(
@@ -250,12 +209,28 @@ class WindowManagementTools {
                 "position": LLMTool.ToolInputSchema.PropertyDefinition(
                     type: "string",
                     description: "Position to snap the window to",
-                    options: ["left", "right", "top", "bottom", "top-left", "top-right", "bottom-left", "bottom-right", "left-third", "middle-third", "right-third"]
+                    options: ["left", "right", "top", "bottom", "center", "top-left", "top-right", "bottom-left", "bottom-right", "left-third", "middle-third", "right-third", "top-third", "bottom-third", "custom"]
                 ),
                 "size": LLMTool.ToolInputSchema.PropertyDefinition(
                     type: "string",
                     description: "Size for the snapped window",
-                    options: ["small", "medium", "large", "half", "third", "two-thirds"]
+                    options: ["small", "medium", "large", "half", "third", "two-thirds", "quarter", "three-quarters", "custom"]
+                ),
+                "custom_x": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "string",
+                    description: "Custom X position as percentage (e.g., '25' for 25% from left). Only used when position='custom'"
+                ),
+                "custom_y": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "string", 
+                    description: "Custom Y position as percentage (e.g., '10' for 10% from top). Only used when position='custom'"
+                ),
+                "custom_width": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "string",
+                    description: "Custom width as percentage (e.g., '50' for 50% width). Only used when size='custom'"
+                ),
+                "custom_height": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "string",
+                    description: "Custom height as percentage (e.g., '75' for 75% height). Only used when size='custom'"
                 ),
                 "display": LLMTool.ToolInputSchema.PropertyDefinition(
                     type: "integer",
@@ -300,37 +275,6 @@ class WindowManagementTools {
         )
     )
     
-    // Cascade windows
-    static let cascadeWindowsTool = LLMTool(
-        name: "cascade_windows", 
-        description: "PREFERRED for multi-app scenarios: Arrange windows using intelligent archetype-based cascade that keeps all apps accessible. Automatically classifies apps (Terminal=side column, Browser=peek layer, IDE=primary, etc.) and positions them so nothing gets buried.",
-        input_schema: LLMTool.ToolInputSchema(
-            properties: [
-                "target": LLMTool.ToolInputSchema.PropertyDefinition(
-                    type: "string",
-                    description: "Which windows to cascade: 'all', 'visible', or specific app name"
-                ),
-                "style": LLMTool.ToolInputSchema.PropertyDefinition(
-                    type: "string",
-                    description: "Cascade style to use",
-                    options: ["intelligent", "classic", "compact", "spread"]
-                ),
-                "focus_mode": LLMTool.ToolInputSchema.PropertyDefinition(
-                    type: "boolean",
-                    description: "Whether to optimize for focused work (larger primary window)"
-                ),
-                "display": LLMTool.ToolInputSchema.PropertyDefinition(
-                    type: "integer",
-                    description: "Display index to cascade windows on (0 for main display, 1 for second display, etc.). If omitted, cascades on the display with most windows"
-                ),
-                "user_intent": LLMTool.ToolInputSchema.PropertyDefinition(
-                    type: "string",
-                    description: "The original user command to help determine context (e.g., 'i want to code' helps identify this as a coding workspace)"
-                )
-            ],
-            required: ["target"]
-        )
-    )
     
     // Tile windows
     static let tileWindowsTool = LLMTool(
@@ -413,6 +357,18 @@ class ToolToCommandConverter {
         return nil
     }
     
+    // Helper to parse size value (supports percentages and pixels)
+    private static func parseSizeValue(_ value: String, screenSize: CGFloat) -> CGFloat? {
+        if value.hasSuffix("px") {
+            // Pixel value (e.g., "800px")
+            let pixelStr = String(value.dropLast(2))
+            return Double(pixelStr).map { CGFloat($0) }
+        } else {
+            // Percentage value (e.g., "75" or "33.5")
+            return Double(value).map { screenSize * CGFloat($0 / 100.0) }
+        }
+    }
+    
     static func convertToolUse(_ toolUse: LLMToolUse) -> WindowCommand? {
         // Convert AnyCodable values to regular Swift types
         var input: [String: Any] = [:]
@@ -421,8 +377,6 @@ class ToolToCommandConverter {
         }
         
         switch toolUse.name {
-        case "move_window":
-            return convertMoveWindow(input)
         case "resize_window":
             return convertResizeWindow(input)
         case "open_app":
@@ -431,16 +385,12 @@ class ToolToCommandConverter {
             return convertCloseApp(input)
         case "focus_window":
             return convertFocusWindow(input)
-        case "arrange_workspace":
-            return convertArrangeWorkspace(input)
         case "snap_window":
             return convertSnapWindow(input)
         case "minimize_window":
             return convertMinimizeWindow(input)
         case "maximize_window":
             return convertMaximizeWindow(input)
-        case "cascade_windows":
-            return convertCascadeWindows(input)
         case "tile_windows":
             return convertTileWindows(input)
         case "flexible_position":
@@ -450,22 +400,6 @@ class ToolToCommandConverter {
         }
     }
     
-    private static func convertMoveWindow(_ input: [String: Any]) -> WindowCommand? {
-        guard let appName = input["app_name"] as? String,
-              let positionStr = input["position"] as? String,
-              let position = WindowPosition(rawValue: positionStr) else {
-            return nil
-        }
-        
-        let display = extractDisplay(from: input)
-        
-        return WindowCommand(
-            action: .move,
-            target: appName,
-            position: position,
-            display: display
-        )
-    }
     
     private static func convertResizeWindow(_ input: [String: Any]) -> WindowCommand? {
         guard let appName = input["app_name"] as? String,
@@ -483,12 +417,10 @@ class ToolToCommandConverter {
             let screenBounds = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1920, height: 1080)
             
             if let heightStr = input["custom_height"] as? String,
-               let heightPercent = Double(heightStr) {
-                let height = screenBounds.height * (heightPercent / 100.0)
+               let height = parseSizeValue(heightStr, screenSize: screenBounds.height) {
                 
                 if let widthStr = input["custom_width"] as? String,
-                   let widthPercent = Double(widthStr) {
-                    let width = screenBounds.width * (widthPercent / 100.0)
+                   let width = parseSizeValue(widthStr, screenSize: screenBounds.width) {
                     customSize = CGSize(width: width, height: height)
                 } else {
                     // Only height specified, preserve width
@@ -496,9 +428,8 @@ class ToolToCommandConverter {
                     customSize = CGSize(width: 0, height: height) // Width will be preserved
                 }
             } else if let widthStr = input["custom_width"] as? String,
-                      let widthPercent = Double(widthStr) {
+                      let width = parseSizeValue(widthStr, screenSize: screenBounds.width) {
                 // Only width specified, preserve height
-                let width = screenBounds.width * (widthPercent / 100.0)
                 parameters["preserve_height"] = "true"
                 customSize = CGSize(width: width, height: 0) // Height will be preserved
             }
@@ -564,25 +495,38 @@ class ToolToCommandConverter {
         )
     }
     
-    private static func convertArrangeWorkspace(_ input: [String: Any]) -> WindowCommand? {
-        guard let context = input["context"] as? String else {
-            return nil
-        }
-        
-        return WindowCommand(
-            action: .arrange,
-            target: context
-        )
-    }
     
     private static func convertSnapWindow(_ input: [String: Any]) -> WindowCommand? {
         guard let appName = input["app_name"] as? String,
-              let positionStr = input["position"] as? String,
-              let position = WindowPosition(rawValue: positionStr) else {
+              let positionStr = input["position"] as? String else {
             return nil
         }
         
-        let size = (input["size"] as? String).flatMap { WindowSize(rawValue: $0) } ?? .medium
+        var parameters: [String: String] = [:]
+        
+        // Handle custom position
+        if positionStr == "custom" {
+            if let customX = input["custom_x"] as? String {
+                parameters["custom_x"] = customX
+            }
+            if let customY = input["custom_y"] as? String {
+                parameters["custom_y"] = customY
+            }
+        }
+        
+        // Handle custom size
+        let sizeStr = input["size"] as? String ?? "medium"
+        if sizeStr == "custom" {
+            if let customWidth = input["custom_width"] as? String {
+                parameters["custom_width"] = customWidth
+            }
+            if let customHeight = input["custom_height"] as? String {
+                parameters["custom_height"] = customHeight
+            }
+        }
+        
+        let position = WindowPosition(rawValue: positionStr)
+        let size = WindowSize(rawValue: sizeStr) ?? .medium
         let display = extractDisplay(from: input)
         
         return WindowCommand(
@@ -590,7 +534,8 @@ class ToolToCommandConverter {
             target: appName,
             position: position,
             size: size,
-            display: display
+            display: display,
+            parameters: parameters.isEmpty ? nil : parameters
         )
     }
     
@@ -619,32 +564,6 @@ class ToolToCommandConverter {
         )
     }
     
-    private static func convertCascadeWindows(_ input: [String: Any]) -> WindowCommand? {
-        guard let target = input["target"] as? String else {
-            return nil
-        }
-        
-        var parameters: [String: String] = [:]
-        if let style = input["style"] as? String {
-            parameters["style"] = style
-        }
-        if let focusMode = input["focus_mode"] as? Bool {
-            parameters["focus"] = focusMode ? "true" : "false"
-        }
-        // ✅ FIX: Preserve user_intent parameter for context detection
-        if let userIntent = input["user_intent"] as? String {
-            parameters["user_intent"] = userIntent
-        }
-        
-        let display = extractDisplay(from: input)
-        
-        return WindowCommand(
-            action: .stack, // Using stack action for cascade
-            target: target,
-            display: display,
-            parameters: parameters
-        )
-    }
     
     private static func convertTileWindows(_ input: [String: Any]) -> WindowCommand? {
         guard let target = input["target"] as? String else {

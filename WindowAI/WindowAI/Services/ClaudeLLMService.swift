@@ -99,12 +99,37 @@ class ClaudeLLMService {
     func processCommand(_ userInput: String, context: LLMContext? = nil) async throws -> [WindowCommand] {
         print("\n🤖 USER COMMAND: \"\(userInput)\"")
         
+        // Debug: Log available windows
+        let windowCount = context?.visibleWindows.count ?? 0
+        print("📊 AVAILABLE WINDOWS: \(windowCount) visible windows for arrangement")
+        if let windows = context?.visibleWindows {
+            let mainDisplay = context?.screenResolutions.first ?? CGSize(width: 1440, height: 900)
+            for window in windows.prefix(10) { // Show first 10 to avoid spam
+                let bounds = window.bounds
+                let widthPercent = (bounds.width / mainDisplay.width) * 100
+                let heightPercent = (bounds.height / mainDisplay.height) * 100
+                let xPercent = (bounds.origin.x / mainDisplay.width) * 100
+                let yPercent = (bounds.origin.y / mainDisplay.height) * 100
+                
+                print("  📱 \(window.appName): x=\(String(format: "%.0f", xPercent))% y=\(String(format: "%.0f", yPercent))% w=\(String(format: "%.0f", widthPercent))% h=\(String(format: "%.0f", heightPercent))% (\(Int(window.bounds.width))x\(Int(window.bounds.height)))")
+            }
+            if windows.count > 10 {
+                print("  ... and \(windows.count - 10) more windows")
+            }
+        }
+        
         let systemPrompt = buildSystemPrompt(context: context)
         let userMessage = ClaudeMessage(role: "user", content: [ClaudeContent(text: userInput)])
         
+        // Calculate dynamic token limit based on window count
+        let baseTokens = 2000
+        let tokensPerWindow = context?.visibleWindows.count ?? 0 > 5 ? 400 : 200
+        let calculatedTokens = baseTokens + (tokensPerWindow * (context?.visibleWindows.count ?? 1))
+        let maxTokens = min(max(calculatedTokens, 2000), 8000) // Between 2000-8000 tokens
+        
         let request = ClaudeRequest(
             model: model,
-            maxTokens: 1000,
+            maxTokens: maxTokens,
             temperature: 0.1, // Low temperature for more deterministic function calling
             system: systemPrompt,
             messages: [userMessage],
@@ -112,7 +137,16 @@ class ClaudeLLMService {
         )
         
         let response = try await sendRequest(request)
-        return try parseCommandsFromResponse(response)
+        let commands = try parseCommandsFromResponse(response)
+        
+        // Debug: Compare tool calls generated vs windows available
+        print("📈 ANALYSIS: Generated \(commands.count) tool calls for \(windowCount) available windows")
+        if commands.count < windowCount && windowCount > 3 {
+            print("⚠️  NOTE: Only \(commands.count) windows positioned out of \(windowCount) available")
+            print("   Consider if all windows should be arranged for comprehensive layout")
+        }
+        
+        return commands
     }
     
     // MARK: - System Prompt
@@ -142,8 +176,8 @@ class ClaudeLLMService {
         
         CASCADE INTELLIGENCE:
         The cascade system is the backbone of this app. It ensures all apps remain accessible:
-        - Primary app: 60-80% visible (main work area)
-        - Secondary apps: Peek out with clickable edges, title bars, or identifying features
+        - Focus app: Given prominent positioning for current work
+        - Other apps: Peek out with clickable edges, title bars, or identifying features
         - Nothing is ever completely hidden - every app has a clickable surface, matter what window is currently selected
         - Smart overlapping: leave music controls visible, terminal output readable, message notifications seen
         - Arrange based on app behavior patterns and user context, not fixed rules
@@ -215,8 +249,8 @@ class ClaudeLLMService {
            - Glanceable Monitors → Corners or edges (minimal space, always visible)
         
         3. **Apply Functional Cascade Layout**:
-           - Always prioritize the most important app type for the context as PRIMARY
-           - Primary app gets main focus and highest layer number
+           - Give the focus app appropriate prominence for the current context
+           - Focus app gets main positioning and highest layer number
            - Supporting apps cascade with strategic overlaps
            - Text streams (Terminal/Console) work best as side columns (25-30% width)
         
@@ -231,19 +265,112 @@ class ClaudeLLMService {
            - Key interaction areas (buttons, tabs) remain accessible
            - No app ever completely hidden behind others
         
+        LAYOUT ANALYSIS & PROBLEM IDENTIFICATION:
+        Before choosing tools, analyze the current window layout:
+        
+        **Screen Coverage Analysis:**
+        - Target: 90-100% screen coverage for maximum efficiency
+        - Identify wasted space (large gaps, tiny windows)
+        - Look for windows positioned off-screen or overlapping poorly
+        
+        **Window Sizing Problems:**
+        - Windows too narrow (< 30% width) may need expansion
+        - Windows too short (< 40% height) may need expansion
+        - Oversized windows (> 90% single dimension) may need smart sizing
+        
+        **Positioning Problems:**
+        - Windows clustered in one area leaving empty space
+        - Windows positioned at extreme edges (> 90% x/y) may be off-screen
+        - Poor cascade/overlap arrangements hiding important content
+        
+        **Multi-Window Conflicts:**
+        - Identify which windows overlap and whether it's efficient
+        - Look for windows that could be better positioned relative to each other
+        - Find opportunities to create better visual hierarchy
+        
+        **Solution Strategy:**
+        1. Position each app to maximize its utility while coordinating with others
+        2. Arrange all windows to be accessible and properly visible
+        3. Use precise positioning to eliminate wasted space
+        4. Ensure every app has clickable surface area
+        
         FLEXIBILITY FOR USER PREFERENCE:
         While cascade is default, respect when users want simple layouts:
         - "Just Terminal and Xcode" → Simple side-by-side if that's what they want
         - "Lock me in" → Minimal layout with just requested apps
         - But always be ready to cascade when multiple apps are needed
         
-        TOOL USAGE:
-        - **ALWAYS use cascade_windows when multiple apps are involved** - never let apps disappear behind others
-        - For single apps: use snap_window for positioning or flexible_position for precision
-        - Multi-app scenarios: cascade_windows with "target"="all" or "visible"
-        - **CRITICAL**: Always include "user_intent" parameter with the original user command for context detection
-        - The cascade system will automatically classify apps by archetype and position them optimally
-        - Trust the cascade intelligence - it understands Terminal vs Browser vs IDE behavior patterns
+        COMPREHENSIVE WINDOW MANAGEMENT:
+        When users request window arrangement (like "rearrange my windows"), operate on ALL visible windows unless specifically limited:
+        - Use `flexible_position` calls for every visible window that needs positioning
+        - Create coordinated layouts where each window has its optimal position and size
+        - Ensure every window is accessible and properly positioned for its function
+        - Don't limit yourself to just a few "key" windows - arrange the complete workspace
+        
+        INTELLIGENT TOOL SELECTION:
+        Choose the right tool based on what the user actually needs:
+        
+        **For precise control and optimization:**
+        - Use `flexible_position` when you need exact positioning with specific percentages/pixels
+        - Multiple `flexible_position` calls create coordinated layouts with perfect screen coverage
+        - Control layer/z-index for proper window stacking (0=back, 3=front)
+        
+        **For simple operations:**
+        - Use `move_window` or `resize_window` for basic positioning/sizing
+        - Use `snap_window` for standard positions (left/right/corners)
+        
+        **For complex arrangements:**
+        - Use multiple `flexible_position` calls to create coordinated layouts
+        - Use archetype behavior patterns to guide intelligent positioning
+        
+        **Decision criteria:**
+        - If layout analysis shows specific problems → use precision tools to fix them
+        - If user wants "maximize coverage" → use multiple `flexible_position` calls
+        - If user wants specific positions → use `move_window` or `flexible_position`
+        - If user wants generic "arrange" → use multiple precision tools for coordinated layouts
+        
+        **PRECISION TOOL EXAMPLES:**
+        
+        For maximum screen coverage with intelligent arrangement:
+        ```
+        flexible_position(app_name: "Xcode", x_position: "0", y_position: "0", width: "65", height: "100", layer: 2, focus: true)
+        flexible_position(app_name: "Terminal", x_position: "65", y_position: "0", width: "35", height: "60", layer: 1, focus: false)  
+        flexible_position(app_name: "Arc", x_position: "65", y_position: "60", width: "35", height: "40", layer: 1, focus: false)
+        ```
+        
+        For fixing specific layout problems:
+        ```
+        // If Terminal is too narrow (only 20% width):
+        resize_window(app_name: "Terminal", size: "custom", custom_width: "35")
+        
+        // If Arc is positioned off-screen:
+        move_window(app_name: "Arc", position: "right")
+        
+        // If windows have poor coverage (only 60%):
+        flexible_position(app_name: "MainApp", x_position: "0", y_position: "0", width: "70", height: "100", layer: 3)
+        flexible_position(app_name: "SideApp", x_position: "70", y_position: "0", width: "30", height: "100", layer: 2)
+        ```
+        
+        **PREFER PRECISION OVER GENERIC:**
+        - When you can calculate exact positions for better coverage → use `flexible_position`
+        - When you see specific sizing problems → use `resize_window` with custom percentages
+        - When you see positioning problems → use `move_window` or `flexible_position`
+        - Use multiple `flexible_position` calls to create intelligent cascaded arrangements
+        
+        **USER EXAMPLE OUTPUTS:**
+        "I want to code"
+        Terminal: x=65% y=3% w=34% h=97% (494x875)
+        Xcode: x=-0% y=3% w=65% h=76% (940x688)
+        Arc: x=0% y=15% w=60% h=85% (864x761)
+        Claude: x=44% y=24% w=45% h=76% (643x686)
+        
+        Expected output:
+        ```
+        flexible_position(app_name: "Xcode", x_position: "0", y_position: "0", width: "65", height: "100", layer: "3", focus: "true")
+        flexible_position(app_name: "Terminal", x_position: "65", y_position: "0", width: "35", height: "50", layer: "2", focus: "false")
+        flexible_position(app_name: "Arc", x_position: "15", y_position: "20", width: "60", height: "75", layer: "1", focus: "false")
+        flexible_position(app_name: "Claude", x_position: "25", y_position: "25", width: "50", height: "70", layer: "0", focus: "false")
+        ```
         
         NEVER:
         - Assume fixed positions for app types
@@ -287,16 +414,87 @@ class ClaudeLLMService {
             prompt += "\n\nCURRENT SYSTEM STATE:\n"
             prompt += "Running apps: \(context.runningApps.joined(separator: ", "))\n"
             
-            if !context.visibleWindows.isEmpty {
-                let windowList = context.visibleWindows.map { "\($0.appName)" }.joined(separator: ", ")
-                prompt += "Visible windows: \(windowList)\n"
-            }
-            
             // Display configuration
             prompt += "\nDISPLAY CONFIGURATION:\n"
             for (index, resolution) in context.screenResolutions.enumerated() {
                 let isMain = index == 0
                 prompt += "Display \(index): \(Int(resolution.width))x\(Int(resolution.height))\(isMain ? " (Main)" : "")\n"
+            }
+            
+            // DETAILED WINDOW LAYOUT ANALYSIS
+            if !context.visibleWindows.isEmpty {
+                prompt += "\nCURRENT WINDOW LAYOUT:\n"
+                let mainDisplay = context.screenResolutions.first ?? CGSize(width: 1440, height: 900)
+                
+                for window in context.visibleWindows {
+                    let bounds = window.bounds
+                    let widthPercent = (bounds.width / mainDisplay.width) * 100
+                    let heightPercent = (bounds.height / mainDisplay.height) * 100
+                    let xPercent = (bounds.origin.x / mainDisplay.width) * 100
+                    let yPercent = (bounds.origin.y / mainDisplay.height) * 100
+                    
+                    prompt += "- \(window.appName): position (\(String(format: "%.0f", xPercent))%, \(String(format: "%.0f", yPercent))%) size \(String(format: "%.0f", widthPercent))%w × \(String(format: "%.0f", heightPercent))%h"
+                    
+                    if window.isMinimized {
+                        prompt += " [MINIMIZED]"
+                    }
+                    
+                    prompt += "\n"
+                }
+                
+                // LAYOUT ANALYSIS
+                prompt += "\nLAYOUT ANALYSIS:\n"
+                
+                // Calculate total screen coverage
+                var totalCoverage: Double = 0
+                var overlaps: [String] = []
+                
+                for i in 0..<context.visibleWindows.count {
+                    let window1 = context.visibleWindows[i]
+                    if window1.isMinimized { continue }
+                    
+                    let area1 = window1.bounds.width * window1.bounds.height
+                    totalCoverage += area1
+                    
+                    // Check for overlaps
+                    for j in (i+1)..<context.visibleWindows.count {
+                        let window2 = context.visibleWindows[j]
+                        if window2.isMinimized { continue }
+                        
+                        let intersect = window1.bounds.intersection(window2.bounds)
+                        if !intersect.isEmpty {
+                            overlaps.append("\(window1.appName) overlaps \(window2.appName)")
+                        }
+                    }
+                }
+                
+                let screenArea = mainDisplay.width * mainDisplay.height
+                let coveragePercent = min((totalCoverage / screenArea) * 100, 100)
+                
+                prompt += "- Screen coverage: \(String(format: "%.0f", coveragePercent))%\n"
+                
+                if !overlaps.isEmpty {
+                    prompt += "- Window overlaps: \(overlaps.joined(separator: ", "))\n"
+                }
+                
+                // Identify layout inefficiencies
+                let visibleNonMinimized = context.visibleWindows.filter { !$0.isMinimized }
+                if visibleNonMinimized.count > 1 {
+                    let avgWidth = visibleNonMinimized.map { $0.bounds.width }.reduce(0, +) / Double(visibleNonMinimized.count)
+                    let avgHeight = visibleNonMinimized.map { $0.bounds.height }.reduce(0, +) / Double(visibleNonMinimized.count)
+                    
+                    if coveragePercent < 85 {
+                        prompt += "- INEFFICIENCY: Poor screen utilization (\(String(format: "%.0f", coveragePercent))% coverage)\n"
+                    }
+                    
+                    if avgWidth < mainDisplay.width * 0.3 {
+                        prompt += "- INEFFICIENCY: Windows too narrow (avg \(String(format: "%.0f", (avgWidth/mainDisplay.width)*100))% width)\n"
+                    }
+                    
+                    if avgHeight < mainDisplay.height * 0.4 {
+                        prompt += "- INEFFICIENCY: Windows too short (avg \(String(format: "%.0f", (avgHeight/mainDisplay.height)*100))% height)\n"
+                    }
+                }
             }
             
             if context.displayCount > 1 {
