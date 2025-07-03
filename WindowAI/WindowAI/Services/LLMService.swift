@@ -24,7 +24,7 @@ class LLMService {
     
     private func setupGeminiService() {
         // Use provided API key
-        let apiKey = "AIzaSyArfzWlmVOgdpjBD-6hV309h8RDA_yiX3s"
+        let apiKey = "AIzaSyD39koI_VvH18yY_K9WDu9nyAKcg3W5ej0"
         geminiService = GeminiLLMService(apiKey: apiKey)
         
         // Also update preferences
@@ -50,6 +50,38 @@ class LLMService {
             confidence: 0.95,
             processingTime: nil
         )
+    }
+    
+    // MARK: - MINIMAL TEST FOR FUNCTION CALLING
+    func testMinimalFunctionCalling(_ userInput: String = "move terminal to the left") async throws -> [WindowCommand] {
+        print("\n🧪 STARTING MINIMAL FUNCTION CALLING TEST")
+        print(String(repeating: "=", count: 60))
+        
+        guard let gemini = geminiService else {
+            throw LLMServiceError.invalidAPIKey
+        }
+        
+        do {
+            let commands = try await gemini.testMinimalFunctionCalling(userInput)
+            
+            print("\n✅ TEST COMPLETED SUCCESSFULLY")
+            print("Commands generated: \(commands.count)")
+            
+            for (index, command) in commands.enumerated() {
+                print("Command \(index + 1):")
+                print("  Action: \(command.action)")
+                print("  Target: \(command.target)")
+                print("  Position: \(command.position?.rawValue ?? "none")")
+            }
+            
+            print(String(repeating: "=", count: 60))
+            return commands
+            
+        } catch {
+            print("\n❌ TEST FAILED: \(error)")
+            print(String(repeating: "=", count: 60))
+            throw error
+        }
     }
     
     // MARK: - Provider-Specific Implementations

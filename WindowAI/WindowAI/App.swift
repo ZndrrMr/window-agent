@@ -38,6 +38,13 @@ class WindowAIController: HotkeyManagerDelegate, LLMServiceDelegate {
         
         // Test LLM integration (disabled until permissions are working)
         // testLLMIntegration()
+        
+        // DEVELOPMENT: Uncomment to run minimal Gemini test automatically
+        // DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+        //     Task {
+        //         await testMinimalGemini("move terminal to the left")
+        //     }
+        // }
     }
     
     // MARK: - Application Setup

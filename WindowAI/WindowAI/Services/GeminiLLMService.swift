@@ -12,7 +12,7 @@ struct GeminiPart: Codable {
     
     enum CodingKeys: String, CodingKey {
         case text
-        case functionCall = "function_call"
+        case functionCall = "functionCall"
     }
     
     init(text: String) {
@@ -204,7 +204,7 @@ class GeminiLLMService {
     private let urlSession: URLSession
     private let baseURL = "https://generativelanguage.googleapis.com/v1beta/models"
     
-    init(apiKey: String, model: String = "gemini-2.0-flash-exp") {
+    init(apiKey: String, model: String = "gemini-2.0-flash") {
         self.apiKey = apiKey
         self.model = model
         
@@ -238,6 +238,7 @@ class GeminiLLMService {
         }
         
         let systemPrompt = buildSystemPrompt(context: context)
+        print("📝 SYSTEM PROMPT LENGTH: \(systemPrompt.count) characters")
         
         // Calculate dynamic token limit based on window count
         let baseTokens = 2000
@@ -261,6 +262,15 @@ class GeminiLLMService {
         )
         
         print("🔧 FUNCTION CALLING ENFORCEMENT: toolConfig.mode = ANY (forces function calls only)")
+        print("🛠️  TOOL COUNT: \(WindowManagementTools.allTools.count) tools being sent")
+        
+        // Debug: Show tool names and parameter counts
+        for tool in WindowManagementTools.allTools {
+            let paramCount = tool.input_schema.properties.count
+            let requiredCount = tool.input_schema.required.count
+            print("   - \(tool.name): \(paramCount) parameters (\(requiredCount) required)")
+        }
+        
         let response = try await sendRequest(request)
         let commands = try parseCommandsFromResponse(response)
         
@@ -685,7 +695,28 @@ class GeminiLLMService {
             let requestData = try encoder.encode(request)
             urlRequest.httpBody = requestData
             
+            // DEBUG: Print the exact request being sent
+            print("\n🔍 GEMINI REQUEST DEBUG:")
+            print("URL: \(urlString)")
+            print("Headers: \(urlRequest.allHTTPHeaderFields ?? [:])")
+            print("Request Body Size: \(requestData.count) bytes")
+            
+            if let requestJson = String(data: requestData, encoding: .utf8) {
+                print("REQUEST JSON (first 2000 chars):")
+                let truncated = requestJson.count > 2000 ? String(requestJson.prefix(2000)) + "..." : requestJson
+                print(truncated)
+            }
+            
             let (data, response) = try await urlSession.data(for: urlRequest)
+            
+            // DEBUG: Print the response
+            print("\n📥 GEMINI RESPONSE DEBUG:")
+            if let responseJson = String(data: data, encoding: .utf8) {
+                print("Response Size: \(data.count) bytes")
+                print("Response JSON (first 1000 chars):")
+                let truncated = responseJson.count > 1000 ? String(responseJson.prefix(1000)) + "..." : responseJson
+                print(truncated)
+            }
             
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw GeminiLLMError.invalidResponse
@@ -798,6 +829,232 @@ class GeminiLLMService {
     // MARK: - Configuration Validation
     func validateConfiguration() -> Bool {
         return !apiKey.isEmpty
+    }
+    
+    // MARK: - MINIMAL TEST METHOD
+    func testMinimalFunctionCalling(_ userInput: String) async throws -> [WindowCommand] {
+        print("\n🧪 MINIMAL TEST: \"\(userInput)\"")
+        
+        // Create minimal system prompt
+        let minimalSystemPrompt = """
+        You are a window management assistant. You MUST use the provided function tools.
+        NEVER respond with text explanations - ONLY use function calls.
+        
+        For any command to move or position a window, use the snap_window function.
+        
+        Examples:
+        - "move terminal to the left" → snap_window(app_name: "Terminal", position: "left")
+        - "move arc to the right" → snap_window(app_name: "Arc", position: "right")
+        """
+        
+        // Create minimal tool set (only snap_window)
+        let minimalTool = LLMTool(
+            name: "snap_window",
+            description: "Snap a window to a position with automatic sizing",
+            input_schema: LLMTool.ToolInputSchema(
+                properties: [
+                    "app_name": LLMTool.ToolInputSchema.PropertyDefinition(
+                        type: "string",
+                        description: "Name of the application whose window to snap"
+                    ),
+                    "position": LLMTool.ToolInputSchema.PropertyDefinition(
+                        type: "string",
+                        description: "Position to snap the window to",
+                        options: ["left", "right", "top", "bottom", "center"]
+                    )
+                ],
+                required: ["app_name", "position"]
+            )
+        )
+        
+        // Convert to Gemini format
+        let geminiTools = convertToGeminiTools([minimalTool])
+        
+        print("🔧 MINIMAL TOOLS: \(geminiTools.count) tool groups")
+        print("   - snap_window: 2 parameters (app_name, position)")
+        
+        // Create minimal request
+        let request = GeminiRequest(
+            contents: [GeminiContent(parts: [GeminiPart(text: userInput)])],
+            tools: geminiTools,
+            systemInstruction: GeminiSystemInstruction(parts: [GeminiPart(text: minimalSystemPrompt)]),
+            generationConfig: GeminiGenerationConfig(
+                temperature: 0.0,
+                maxOutputTokens: 1000  // Minimal token limit
+            ),
+            toolConfig: GeminiToolConfig(
+                functionCallingConfig: GeminiFunctionCallingConfig(
+                    mode: GeminiFunctionCallingConfig.Mode.any.stringValue
+                )
+            )
+        )
+        
+        print("🎯 FORCING FUNCTION CALLS: toolConfig.mode = ANY")
+        
+        // Enhanced request debugging
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = .prettyPrinted
+            let requestData = try encoder.encode(request)
+            
+            print("\n📤 MINIMAL REQUEST DEBUG:")
+            print("Size: \(requestData.count) bytes")
+            
+            if let requestJson = String(data: requestData, encoding: .utf8) {
+                print("Full JSON Request:")
+                print(requestJson)
+            }
+            
+            // Send the request
+            let response = try await sendMinimalRequest(request)
+            
+            // Parse response with extensive debugging
+            return try parseMinimalResponse(response)
+            
+        } catch {
+            print("❌ ENCODING ERROR: \(error)")
+            throw GeminiLLMError.parsingError("Failed to encode request: \(error)")
+        }
+    }
+    
+    // MARK: - Minimal Request Sender
+    private func sendMinimalRequest(_ request: GeminiRequest) async throws -> GeminiResponse {
+        let urlString = "\(baseURL)/\(model):generateContent?key=\(apiKey)"
+        guard let url = URL(string: urlString) else {
+            throw GeminiLLMError.invalidURL
+        }
+        
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = "POST"
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = .prettyPrinted
+            let requestData = try encoder.encode(request)
+            urlRequest.httpBody = requestData
+            
+            print("\n🌐 SENDING MINIMAL REQUEST:")
+            print("URL: \(urlString)")
+            print("Method: POST")
+            print("Content-Type: application/json")
+            print("Body Size: \(requestData.count) bytes")
+            
+            let (data, response) = try await urlSession.data(for: urlRequest)
+            
+            print("\n📥 RECEIVED MINIMAL RESPONSE:")
+            print("Response Size: \(data.count) bytes")
+            
+            // Log raw response
+            if let responseJson = String(data: data, encoding: .utf8) {
+                print("RAW RESPONSE JSON:")
+                print(responseJson)
+            }
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw GeminiLLMError.invalidResponse
+            }
+            
+            print("HTTP Status: \(httpResponse.statusCode)")
+            
+            guard 200...299 ~= httpResponse.statusCode else {
+                if let errorData = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    print("ERROR RESPONSE: \(errorData)")
+                    if let error = errorData["error"] as? [String: Any],
+                       let message = error["message"] as? String {
+                        throw GeminiLLMError.apiError(message)
+                    }
+                }
+                throw GeminiLLMError.httpError(httpResponse.statusCode)
+            }
+            
+            // Parse the response
+            let geminiResponse = try JSONDecoder().decode(GeminiResponse.self, from: data)
+            return geminiResponse
+            
+        } catch let error as GeminiLLMError {
+            throw error
+        } catch {
+            print("❌ NETWORK/PARSING ERROR: \(error)")
+            throw GeminiLLMError.networkError(error)
+        }
+    }
+    
+    // MARK: - Minimal Response Parser
+    private func parseMinimalResponse(_ response: GeminiResponse) throws -> [WindowCommand] {
+        var commands: [WindowCommand] = []
+        
+        print("\n🔍 PARSING MINIMAL RESPONSE:")
+        print("Candidates count: \(response.candidates.count)")
+        
+        if let usage = response.usageMetadata {
+            print("Token usage: \(usage.totalTokenCount ?? 0) total")
+        }
+        
+        guard let firstCandidate = response.candidates.first else {
+            throw GeminiLLMError.noCommandsGenerated
+        }
+        
+        print("Finish reason: \(firstCandidate.finishReason ?? "none")")
+        print("Content parts count: \(firstCandidate.content.parts.count)")
+        
+        for (index, part) in firstCandidate.content.parts.enumerated() {
+            print("\nPart \(index + 1):")
+            
+            if let functionCall = part.functionCall {
+                print("  🎯 FUNCTION CALL FOUND!")
+                print("  Function name: \(functionCall.name)")
+                print("  Arguments count: \(functionCall.args.count)")
+                
+                // Debug each argument
+                for (key, value) in functionCall.args {
+                    print("    \(key): \(value.value) (type: \(type(of: value.value)))")
+                }
+                
+                // Convert to WindowCommand
+                let toolUseInput = functionCall.args.mapValues { AnyCodable($0.value) }
+                let toolUse = LLMToolUse(
+                    id: UUID().uuidString,
+                    name: functionCall.name,
+                    input: toolUseInput
+                )
+                
+                if let command = ToolToCommandConverter.convertToolUse(toolUse) {
+                    commands.append(command)
+                    print("  ✅ Successfully converted to WindowCommand")
+                    print("    Action: \(command.action)")
+                    print("    Target: \(command.target)")
+                    print("    Position: \(command.position?.rawValue ?? "none")")
+                } else {
+                    print("  ❌ Failed to convert function call to WindowCommand")
+                }
+                
+            } else if let text = part.text {
+                print("  📝 TEXT FOUND (this is the problem!):")
+                print("    \"\(text)\"")
+                print("  ⚠️  Model should have called snap_window instead of generating text")
+                
+            } else {
+                print("  ❓ Unknown part type")
+            }
+        }
+        
+        print("\nFinal result: \(commands.count) commands generated")
+        
+        if commands.isEmpty {
+            let textResponses = firstCandidate.content.parts.compactMap { $0.text }
+            if !textResponses.isEmpty {
+                let fullText = textResponses.joined(separator: " ")
+                print("❌ FUNCTION CALLING FAILED - Model generated text instead of function calls")
+                print("Text: \(fullText)")
+                throw GeminiLLMError.noToolsUsed("Model generated text instead of function calls: \(fullText)")
+            } else {
+                print("❌ No function calls or text found")
+                throw GeminiLLMError.noCommandsGenerated
+            }
+        }
+        
+        return commands
     }
 }
 

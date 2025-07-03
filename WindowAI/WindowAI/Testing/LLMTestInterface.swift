@@ -8,11 +8,15 @@ class LLMTestInterface {
     private let commandExecutor: CommandExecutor
     private let appLauncher: AppLauncher
     private var claudeService: ClaudeLLMService?
+    private var llmService: LLMService?
     
     init() {
         self.windowManager = WindowManager.shared
         self.appLauncher = AppLauncher()
         self.commandExecutor = CommandExecutor(windowManager: windowManager, appLauncher: appLauncher)
+        
+        // Set up Gemini service (it has built-in API key)
+        self.llmService = LLMService(windowManager: windowManager)
     }
     
     // MARK: - Setup
@@ -92,6 +96,72 @@ class LLMTestInterface {
         print("\n🎉 Test suite completed!")
     }
     
+    // MARK: - MINIMAL GEMINI FUNCTION CALLING TEST
+    func testMinimalGeminiFunctionCalling(_ command: String = "move terminal to the left") async {
+        guard let llmService = llmService else {
+            print("❌ LLM Service not configured")
+            return
+        }
+        
+        print("\n🧪 MINIMAL GEMINI FUNCTION CALLING TEST")
+        print(String(repeating: "=", count: 70))
+        print("📋 Purpose: Isolate and debug function calling issues with Gemini 2.0 Flash")
+        print("🎯 Command: \"\(command)\"")
+        print("🔧 Tools: Only snap_window with minimal parameters")
+        print("📡 API: Direct Gemini API with toolConfig.mode = ANY")
+        print("")
+        
+        do {
+            let commands = try await llmService.testMinimalFunctionCalling(command)
+            
+            print("\n🎉 SUCCESS: Minimal test completed!")
+            print("Generated \(commands.count) command(s)")
+            
+            if commands.isEmpty {
+                print("⚠️  No commands generated - this indicates a function calling issue")
+            } else {
+                print("✅ Function calling is working!")
+                for (index, cmd) in commands.enumerated() {
+                    print("  \(index + 1). \(cmd.action.rawValue) \(cmd.target) → \(cmd.position?.rawValue ?? "no position")")
+                }
+            }
+            
+        } catch {
+            print("\n❌ MINIMAL TEST FAILED:")
+            print("Error: \(error)")
+            
+            if let geminiError = error as? GeminiLLMError {
+                print("\nGemini Error Details:")
+                switch geminiError {
+                case .noToolsUsed(let response):
+                    print("🔍 DIAGNOSIS: Model generated text instead of function calls")
+                    print("📝 Response: \(response)")
+                    print("💡 FIX: Check tool_config.function_calling_config.mode = 'ANY'")
+                    
+                case .apiError(let message):
+                    print("🔍 DIAGNOSIS: API error from Gemini")
+                    print("📝 Message: \(message)")
+                    print("💡 FIX: Check API key, model name, or request format")
+                    
+                case .networkError(let networkError):
+                    print("🔍 DIAGNOSIS: Network connectivity issue")
+                    print("📝 Error: \(networkError)")
+                    print("💡 FIX: Check internet connection and API endpoint")
+                    
+                case .noCommandsGenerated:
+                    print("🔍 DIAGNOSIS: No function calls or text in response")
+                    print("💡 FIX: Check if response parsing is working correctly")
+                    
+                default:
+                    print("🔍 DIAGNOSIS: Other Gemini error")
+                    print("💡 FIX: Check full error details above")
+                }
+            }
+        }
+        
+        print(String(repeating: "=", count: 70))
+    }
+    
     // MARK: - System Information
     func printSystemInfo() {
         print("\n📱 System Information")
@@ -142,12 +212,33 @@ func runFullLLMTestSuite(apiKey: String) async {
     await tester.runTestSuite()
 }
 
+// MARK: - MINIMAL GEMINI FUNCTION CALLING TEST
+func testMinimalGemini(_ command: String = "move terminal to the left") async {
+    let tester = LLMTestInterface()
+    await tester.testMinimalGeminiFunctionCalling(command)
+}
+
 // Example usage (you can call this from anywhere):
 /*
+
+// Test Claude (requires API key):
 Task {
     await quickTestLLM(
         apiKey: "your-anthropic-api-key-here",
         command: "Open Safari and put it on the left half of the screen"
     )
 }
+
+// Test Gemini minimal function calling (no API key needed - built-in):
+Task {
+    await testMinimalGemini("move terminal to the left")
+}
+
+// Test different commands:
+Task {
+    await testMinimalGemini("move arc to the right")
+    await testMinimalGemini("move finder to the center")
+    await testMinimalGemini("snap terminal left")
+}
+
 */
