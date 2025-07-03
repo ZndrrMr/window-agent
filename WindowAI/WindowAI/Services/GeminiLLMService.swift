@@ -108,17 +108,45 @@ struct GeminiProperty: Codable {
     }
 }
 
+struct GeminiToolConfig: Codable {
+    let functionCallingConfig: GeminiFunctionCallingConfig
+    
+    enum CodingKeys: String, CodingKey {
+        case functionCallingConfig = "function_calling_config"
+    }
+}
+
+struct GeminiFunctionCallingConfig: Codable {
+    let mode: String
+    
+    enum Mode {
+        case auto
+        case any
+        case none
+        
+        var stringValue: String {
+            switch self {
+            case .auto: return "AUTO"
+            case .any: return "ANY"
+            case .none: return "NONE"
+            }
+        }
+    }
+}
+
 struct GeminiRequest: Codable {
     let contents: [GeminiContent]
     let tools: [GeminiTool]?
     let systemInstruction: GeminiSystemInstruction?
     let generationConfig: GeminiGenerationConfig
+    let toolConfig: GeminiToolConfig?
     
     enum CodingKeys: String, CodingKey {
         case contents
         case tools
         case systemInstruction = "system_instruction"
         case generationConfig = "generation_config"
+        case toolConfig = "tool_config"
     }
 }
 
@@ -224,9 +252,15 @@ class GeminiLLMService {
             generationConfig: GeminiGenerationConfig(
                 temperature: 0.0,  // Zero temperature for deterministic function calling
                 maxOutputTokens: maxTokens
+            ),
+            toolConfig: GeminiToolConfig(
+                functionCallingConfig: GeminiFunctionCallingConfig(
+                    mode: GeminiFunctionCallingConfig.Mode.any.stringValue
+                )
             )
         )
         
+        print("🔧 FUNCTION CALLING ENFORCEMENT: toolConfig.mode = ANY (forces function calls only)")
         let response = try await sendRequest(request)
         let commands = try parseCommandsFromResponse(response)
         
