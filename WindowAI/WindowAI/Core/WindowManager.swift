@@ -50,6 +50,190 @@ class WindowManager {
         return windows
     }
     
+    // MARK: - Async Parallel Window Discovery
+    func getAllWindowsAsync() async -> [WindowInfo] {
+        guard checkAccessibilityPermissions() else { 
+            return [] 
+        }
+        
+        let relevantApps = getRelevantApps()
+        
+        // Parallel app scanning with concurrency limits
+        return await withTaskGroup(of: [WindowInfo].self, returning: [WindowInfo].self) { group in
+            for app in relevantApps {
+                group.addTask { 
+                    await self.getWindowsForAppAsync(pid: app.processIdentifier)
+                }
+            }
+            
+            // Collect all results
+            var allWindows: [WindowInfo] = []
+            for await windows in group {
+                allWindows.append(contentsOf: windows)
+            }
+            return allWindows
+        }
+    }
+    
+    private func getRelevantApps() -> [NSRunningApplication] {
+        return NSWorkspace.shared.runningApplications.filter { app in
+            guard let bundleId = app.bundleIdentifier,
+                  let appName = app.localizedName else { return false }
+            
+            // Skip system apps, background processes  
+            return app.activationPolicy == .regular &&
+                   !bundleId.hasPrefix("com.apple.") &&
+                   !["Dock", "Finder", "SystemUIServer", "WindowServer"].contains(appName) &&
+                   !bundleId.contains("com.apple.dock") &&
+                   !bundleId.contains("com.apple.systemuiserver")
+        }
+        .prefix(15) // Limit to first 15 relevant apps
+        .map { $0 }
+    }
+    
+    private func getWindowsForAppAsync(pid: pid_t) async -> [WindowInfo] {
+        // Add timeout per app to prevent hanging
+        return await withTimeout(seconds: 2.0) {
+            await self.getWindowsForAppUnsafe(pid: pid)
+        } ?? []
+    }
+    
+    private func getWindowsForAppUnsafe(pid: pid_t) async -> [WindowInfo] {
+        guard checkAccessibilityPermissions() else { 
+            return [] 
+        }
+        
+        // Get window references first (sequential for AX app reference)
+        let windowRefs = getWindowReferences(pid: pid)
+        
+        // Parallel property gathering for all windows in this app
+        return await withTaskGroup(of: WindowInfo?.self, returning: [WindowInfo].self) { group in
+            for windowRef in windowRefs {
+                group.addTask {
+                    await self.createWindowInfoAsync(from: windowRef, appPID: pid)
+                }
+            }
+            
+            var windows: [WindowInfo] = []
+            for await window in group {
+                if let window = window {
+                    windows.append(window)
+                }
+            }
+            return windows
+        }
+    }
+    
+    private func getWindowReferences(pid: pid_t) -> [AXUIElement] {
+        let appRef = AXUIElementCreateApplication(pid)
+        var windowsRef: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(appRef, kAXWindowsAttribute as CFString, &windowsRef)
+        
+        if result != .success {
+            return []
+        }
+        
+        return (windowsRef as? [AXUIElement]) ?? []
+    }
+    
+    private func createWindowInfoAsync(from window: AXUIElement, appPID: pid_t) async -> WindowInfo? {
+        // Gather all properties in parallel
+        async let title = getWindowTitleAsync(window)
+        async let position = getWindowPositionAsync(window) 
+        async let size = getWindowSizeAsync(window)
+        async let isMinimized = getWindowMinimizedAsync(window)
+        async let appName = getAppNameAsync(appPID)
+        
+        // Wait for all to complete
+        let (finalTitle, finalPosition, finalSize, minimized, finalAppName) = await (title, position, size, isMinimized, appName)
+        
+        let bounds = CGRect(
+            origin: finalPosition ?? CGPoint.zero, 
+            size: finalSize ?? CGSize.zero
+        )
+        
+        return WindowInfo(
+            title: finalTitle ?? (minimized ? "Minimized Window" : "Untitled"),
+            appName: finalAppName ?? "Unknown App",
+            bounds: bounds,
+            windowRef: window
+        )
+    }
+    
+    // MARK: - Async Property Getters
+    private func getWindowTitleAsync(_ window: AXUIElement) async -> String? {
+        return await withCheckedContinuation { continuation in
+            var titleRef: CFTypeRef?
+            let result = AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &titleRef)
+            let title = (result == .success) ? (titleRef as? String) : nil
+            continuation.resume(returning: title)
+        }
+    }
+    
+    private func getWindowPositionAsync(_ window: AXUIElement) async -> CGPoint? {
+        return await withCheckedContinuation { continuation in
+            var positionRef: CFTypeRef?
+            let result = AXUIElementCopyAttributeValue(window, kAXPositionAttribute as CFString, &positionRef)
+            
+            if result == .success, let positionValue = positionRef {
+                var position = CGPoint.zero
+                AXValueGetValue(positionValue as! AXValue, .cgPoint, &position)
+                continuation.resume(returning: position)
+            } else {
+                continuation.resume(returning: nil)
+            }
+        }
+    }
+    
+    private func getWindowSizeAsync(_ window: AXUIElement) async -> CGSize? {
+        return await withCheckedContinuation { continuation in
+            var sizeRef: CFTypeRef?
+            let result = AXUIElementCopyAttributeValue(window, kAXSizeAttribute as CFString, &sizeRef)
+            
+            if result == .success, let sizeValue = sizeRef {
+                var size = CGSize.zero
+                AXValueGetValue(sizeValue as! AXValue, .cgSize, &size)
+                continuation.resume(returning: size)
+            } else {
+                continuation.resume(returning: nil)
+            }
+        }
+    }
+    
+    private func getWindowMinimizedAsync(_ window: AXUIElement) async -> Bool {
+        return await withCheckedContinuation { continuation in
+            var minimizedRef: CFTypeRef?
+            let result = AXUIElementCopyAttributeValue(window, kAXMinimizedAttribute as CFString, &minimizedRef)
+            let isMinimized = (result == .success && (minimizedRef as? Bool) == true)
+            continuation.resume(returning: isMinimized)
+        }
+    }
+    
+    private func getAppNameAsync(_ appPID: pid_t) async -> String? {
+        return await withCheckedContinuation { continuation in
+            let appName = NSRunningApplication(processIdentifier: appPID)?.localizedName
+            continuation.resume(returning: appName)
+        }
+    }
+    
+    // MARK: - Timeout Utility
+    private func withTimeout<T>(seconds: TimeInterval, operation: @escaping () async -> T) async -> T? {
+        return await withTaskGroup(of: T?.self) { group in
+            group.addTask {
+                await operation()
+            }
+            
+            group.addTask {
+                try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                return nil
+            }
+            
+            let result = await group.next()
+            group.cancelAll()
+            return result ?? nil
+        }
+    }
+    
     func getWindowsForApp(named appName: String) -> [WindowInfo] {
         guard let app = NSWorkspace.shared.runningApplications.first(where: { 
             $0.localizedName?.lowercased() == appName.lowercased() 
@@ -556,6 +740,21 @@ extension WindowManager {
         }
         
         return true // Assume visible if we can't determine
+    }
+    
+    func isWindowVisibleAsync(_ windowInfo: WindowInfo) async -> Bool {
+        guard checkAccessibilityPermissions() else { return false }
+        
+        return await withCheckedContinuation { continuation in
+            var isMinimized: CFTypeRef?
+            let result = AXUIElementCopyAttributeValue(windowInfo.windowRef, kAXMinimizedAttribute as CFString, &isMinimized)
+            
+            if result == .success, let minimized = isMinimized as? Bool {
+                continuation.resume(returning: !minimized)
+            } else {
+                continuation.resume(returning: true) // Assume visible if we can't determine
+            }
+        }
     }
     
     private func getBundleID(for appName: String) -> String? {

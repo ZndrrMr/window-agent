@@ -231,6 +231,95 @@ class WindowAIController: HotkeyManagerDelegate, LLMServiceDelegate {
         )
     }
     
+    // MARK: - Async Context Building
+    private func buildLLMContextAsync() async -> LLMContext {
+        let windowManager = WindowManager.shared
+        
+        // Parallel data gathering
+        async let allWindows = windowManager.getAllWindowsAsync()
+        async let displays = windowManager.getAllDisplayInfo()
+        async let runningApps = getRunningAppNamesAsync()
+        
+        // Wait for core data
+        let (windows, displayInfo, apps) = await (allWindows, displays, runningApps)
+        
+        print("⚡️ Parallel context building complete: \(windows.count) windows from \(apps.count) apps")
+        
+        // Parallel window enrichment (visibility, display detection)
+        let enrichedWindows = await enrichWindowsWithMetadataAsync(windows, displays: displayInfo)
+        
+        // Get screen resolutions
+        let screenResolutions = displayInfo.map { $0.frame.size }
+        
+        // Build display descriptions for the prompt
+        let displayDescriptions = displayInfo.enumerated().map { index, display in
+            "\(index): \(display.name) (\(Int(display.frame.width))x\(Int(display.frame.height)))\(display.isMain ? " - Main" : "")"
+        }.joined(separator: ", ")
+        
+        print("📱 Display Configuration: \(displayDescriptions)")
+        
+        // Debug: Print current window positions and sizes
+        print("\n🪟 CURRENT WINDOW LAYOUT:")
+        for window in windows {
+            let bounds = window.bounds
+            let widthPercent = (bounds.width / displayInfo.first!.frame.width) * 100
+            let heightPercent = (bounds.height / displayInfo.first!.frame.height) * 100
+            print("  📱 \(window.appName): \(Int(bounds.origin.x)),\(Int(bounds.origin.y)) - \(Int(bounds.width))x\(Int(bounds.height)) (\(String(format: "%.0f", widthPercent))%w × \(String(format: "%.0f", heightPercent))%h)")
+        }
+        print("")
+        
+        return LLMContext(
+            runningApps: apps,
+            visibleWindows: enrichedWindows,
+            screenResolutions: screenResolutions,
+            currentWorkspace: nil,
+            displayCount: displayInfo.count,
+            userPreferences: nil
+        )
+    }
+    
+    private func getRunningAppNamesAsync() async -> [String] {
+        return await withCheckedContinuation { continuation in
+            let runningApps = NSWorkspace.shared.runningApplications
+                .compactMap { $0.localizedName }
+                .filter { !$0.isEmpty }
+                .sorted()
+            continuation.resume(returning: runningApps)
+        }
+    }
+    
+    private func enrichWindowsWithMetadataAsync(_ windows: [WindowInfo], displays: [DisplayInfo]) async -> [LLMContext.WindowSummary] {
+        let windowManager = WindowManager.shared
+        
+        return await withTaskGroup(of: LLMContext.WindowSummary.self, returning: [LLMContext.WindowSummary].self) { group in
+            for window in windows {
+                group.addTask {
+                    async let isVisible = windowManager.isWindowVisibleAsync(window)
+                    async let displayIndex = windowManager.getDisplayForWindow(window)
+                    
+                    let (visible, display) = await (isVisible, displayIndex)
+                    
+                    // Debug: Log window state to verify boolean logic fix
+                    print("🔍 Window State: \(window.appName) - Visible: \(visible), Minimized: \(!visible)")
+                    
+                    return LLMContext.WindowSummary(
+                        title: window.title,
+                        appName: window.appName,
+                        bounds: window.bounds,
+                        isMinimized: !visible,
+                        displayIndex: display
+                    )
+                }
+            }
+            
+            var summaries: [LLMContext.WindowSummary] = []
+            for await summary in group {
+                summaries.append(summary)
+            }
+            return summaries
+        }
+    }
+    
     // MARK: - Command Processing
     @objc private func handleCommandEntered(_ notification: Notification) {
         guard let userInfo = notification.userInfo,
@@ -262,7 +351,12 @@ class WindowAIController: HotkeyManagerDelegate, LLMServiceDelegate {
         
         Task {
             do {
-                let context = buildLLMContext()
+                print("⚡️ Starting parallel context building...")
+                let contextStartTime = Date()
+                let context = await buildLLMContextAsync()
+                let contextDuration = Date().timeIntervalSince(contextStartTime)
+                print("⚡️ Context building completed in \(String(format: "%.2f", contextDuration))s (was ~5s before)")
+                
                 let response = try await llmService.processCommand(userInput, context: context)
                 
                 let duration = Date().timeIntervalSince(startTime)
