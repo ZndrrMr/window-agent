@@ -11,9 +11,10 @@ class UserPreferences: ObservableObject {
     @Published var hotkeyModifiers: UInt32 = 1179648 // Cmd + Shift (1048576 + 131072)
     
     // MARK: - LLM Settings
-    @Published var llmProvider: LLMProvider = .openAI
+    @Published var llmProvider: LLMProvider = .gemini
     @Published var openAIAPIKey: String = ""
     @Published var anthropicAPIKey: String = ""
+    @Published var geminiAPIKey: String = ""
     @Published var model: String = "gpt-4"
     @Published var maxTokens: Int = 500
     @Published var temperature: Double = 0.3
@@ -91,12 +92,14 @@ class UserPreferences: ObservableObject {
 enum LLMProvider: String, Codable, CaseIterable {
     case openAI = "openai"
     case anthropic = "anthropic"
+    case gemini = "gemini"
     case local = "local"
     
     var displayName: String {
         switch self {
         case .openAI: return "OpenAI"
         case .anthropic: return "Anthropic"
+        case .gemini: return "Google Gemini"
         case .local: return "Local Model"
         }
     }

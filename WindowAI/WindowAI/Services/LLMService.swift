@@ -9,7 +9,7 @@ class LLMService {
     weak var delegate: LLMServiceDelegate?
     private let preferences = UserPreferences.shared
     private var urlSession: URLSession
-    private var claudeService: ClaudeLLMService?
+    private var geminiService: GeminiLLMService?
     private let windowManager: WindowManager
     
     init(windowManager: WindowManager) {
@@ -19,30 +19,30 @@ class LLMService {
         config.timeoutIntervalForResource = 60.0
         self.urlSession = URLSession(configuration: config)
         
-        setupClaudeService()
+        setupGeminiService()
     }
     
-    private func setupClaudeService() {
-        // Hardcode API key for testing
-        let apiKey = "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"
-        claudeService = ClaudeLLMService(apiKey: apiKey)
-        
-        // Also update preferences
-        preferences.anthropicAPIKey = apiKey
+    private func setupGeminiService() {
+        // TODO: Get API key from user preferences or environment
+        // For now, this will need to be set by the user in preferences
+        let apiKey = preferences.geminiAPIKey ?? ""
+        if !apiKey.isEmpty {
+            geminiService = GeminiLLMService(apiKey: apiKey)
+        }
     }
     
     // MARK: - Public API
     func processCommand(_ userInput: String, context: LLMContext? = nil) async throws -> LLMResponse {
-        // Always use Claude for now since it's the most capable
-        return try await processWithClaude(userInput, context: context)
+        // Use Gemini 2.0 Flash for fastest responses
+        return try await processWithGemini(userInput, context: context)
     }
     
-    private func processWithClaude(_ userInput: String, context: LLMContext? = nil) async throws -> LLMResponse {
-        guard let claude = claudeService else {
+    private func processWithGemini(_ userInput: String, context: LLMContext? = nil) async throws -> LLMResponse {
+        guard let gemini = geminiService else {
             throw LLMServiceError.invalidAPIKey
         }
         
-        let commands = try await claude.processCommand(userInput, context: context)
+        let commands = try await gemini.processCommand(userInput, context: context)
         
         return LLMResponse(
             commands: commands,
@@ -62,8 +62,8 @@ class LLMService {
     }
     
     private func processWithAnthropic(_ request: LLMRequest) async throws -> LLMResponse {
-        // This method is now deprecated - use processWithClaude instead
-        return try await processWithClaude(request.userInput)
+        // This method is now deprecated - use processWithGemini instead
+        return try await processWithGemini(request.userInput)
     }
     
     private func processWithLocalModel(_ request: LLMRequest) async throws -> LLMResponse {
@@ -187,16 +187,16 @@ class LLMService {
     
     // MARK: - Validation
     func validateConfiguration() -> Bool {
-        // Always return true since we hardcoded the API key
-        return true
+        return geminiService?.validateConfiguration() ?? false
     }
     
     func updateAPIKey(_ apiKey: String) {
-        claudeService = ClaudeLLMService(apiKey: apiKey)
+        preferences.geminiAPIKey = apiKey
+        geminiService = GeminiLLMService(apiKey: apiKey)
     }
     
     func isConfigured() -> Bool {
-        return claudeService != nil
+        return geminiService != nil
     }
 }
 

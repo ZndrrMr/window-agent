@@ -1,97 +1,188 @@
 import Foundation
 import Cocoa
 
-// MARK: - Claude API Data Structures
-struct ClaudeMessage: Codable {
-    let role: String
-    let content: [ClaudeContent]
+// MARK: - Gemini API Data Structures
+struct GeminiContent: Codable {
+    let parts: [GeminiPart]
 }
 
-struct ClaudeContent: Codable {
-    let type: String
+struct GeminiPart: Codable {
     let text: String?
-    let id: String?
-    let name: String?
-    let input: [String: AnyCodable]?
+    let functionCall: GeminiFunctionCall?
+    
+    enum CodingKeys: String, CodingKey {
+        case text
+        case functionCall = "function_call"
+    }
     
     init(text: String) {
-        self.type = "text"
         self.text = text
-        self.id = nil
-        self.name = nil
-        self.input = nil
+        self.functionCall = nil
     }
     
-    init(toolUse: LLMToolUse) {
-        self.type = "tool_use"
+    init(functionCall: GeminiFunctionCall) {
         self.text = nil
-        self.id = toolUse.id
-        self.name = toolUse.name
-        self.input = toolUse.input
+        self.functionCall = functionCall
     }
 }
 
-struct ClaudeRequest: Codable {
-    let model: String
-    let maxTokens: Int
-    let temperature: Double
-    let system: String
-    let messages: [ClaudeMessage]
-    let tools: [LLMTool]
+struct GeminiFunctionCall: Codable {
+    let name: String
+    let args: [String: GeminiValue]
+}
+
+struct GeminiValue: Codable {
+    let value: Any
+    
+    init(_ value: Any) {
+        self.value = value
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        
+        if let intValue = try? container.decode(Int.self) {
+            value = intValue
+        } else if let doubleValue = try? container.decode(Double.self) {
+            value = doubleValue
+        } else if let stringValue = try? container.decode(String.self) {
+            value = stringValue
+        } else if let boolValue = try? container.decode(Bool.self) {
+            value = boolValue
+        } else {
+            throw DecodingError.dataCorrupted(
+                DecodingError.Context(codingPath: decoder.codingPath, 
+                                    debugDescription: "Unsupported type")
+            )
+        }
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        
+        if let intValue = value as? Int {
+            try container.encode(intValue)
+        } else if let doubleValue = value as? Double {
+            try container.encode(doubleValue)
+        } else if let stringValue = value as? String {
+            try container.encode(stringValue)
+        } else if let boolValue = value as? Bool {
+            try container.encode(boolValue)
+        } else {
+            throw EncodingError.invalidValue(value, 
+                EncodingError.Context(codingPath: encoder.codingPath, 
+                                    debugDescription: "Unsupported type"))
+        }
+    }
+}
+
+struct GeminiTool: Codable {
+    let functionDeclarations: [GeminiFunctionDeclaration]
     
     enum CodingKeys: String, CodingKey {
-        case model
-        case maxTokens = "max_tokens"
-        case temperature
-        case system
-        case messages
-        case tools
+        case functionDeclarations = "function_declarations"
     }
 }
 
-struct ClaudeResponse: Codable {
-    let id: String
+struct GeminiFunctionDeclaration: Codable {
+    let name: String
+    let description: String
+    let parameters: GeminiParameters
+}
+
+struct GeminiParameters: Codable {
     let type: String
-    let role: String
-    let content: [ClaudeContent]
-    let model: String
-    let stopReason: String?
-    let stopSequence: String?
-    let usage: ClaudeUsage
+    let properties: [String: GeminiProperty]
+    let required: [String]
+}
+
+struct GeminiProperty: Codable {
+    let type: String
+    let description: String
+    let `enum`: [String]?
     
-    enum CodingKeys: String, CodingKey {
-        case id, type, role, content, model
-        case stopReason = "stop_reason"
-        case stopSequence = "stop_sequence"
-        case usage
+    init(type: String, description: String, options: [String]? = nil) {
+        self.type = type
+        self.description = description
+        self.`enum` = options
     }
 }
 
-struct ClaudeUsage: Codable {
-    let inputTokens: Int
-    let outputTokens: Int
+struct GeminiRequest: Codable {
+    let contents: [GeminiContent]
+    let tools: [GeminiTool]?
+    let systemInstruction: GeminiSystemInstruction?
+    let generationConfig: GeminiGenerationConfig
     
     enum CodingKeys: String, CodingKey {
-        case inputTokens = "input_tokens"
-        case outputTokens = "output_tokens"
+        case contents
+        case tools
+        case systemInstruction = "system_instruction"
+        case generationConfig = "generation_config"
     }
 }
 
-// MARK: - Claude LLM Service
-class ClaudeLLMService {
+struct GeminiSystemInstruction: Codable {
+    let parts: [GeminiPart]
+}
+
+struct GeminiGenerationConfig: Codable {
+    let temperature: Double
+    let maxOutputTokens: Int
+    
+    enum CodingKeys: String, CodingKey {
+        case temperature
+        case maxOutputTokens = "max_output_tokens"
+    }
+}
+
+struct GeminiResponse: Codable {
+    let candidates: [GeminiCandidate]
+    let usageMetadata: GeminiUsageMetadata?
+    
+    enum CodingKeys: String, CodingKey {
+        case candidates
+        case usageMetadata = "usage_metadata"
+    }
+}
+
+struct GeminiCandidate: Codable {
+    let content: GeminiContent
+    let finishReason: String?
+    
+    enum CodingKeys: String, CodingKey {
+        case content
+        case finishReason = "finish_reason"
+    }
+}
+
+struct GeminiUsageMetadata: Codable {
+    let promptTokenCount: Int?
+    let candidatesTokenCount: Int?
+    let totalTokenCount: Int?
+    
+    enum CodingKeys: String, CodingKey {
+        case promptTokenCount = "prompt_token_count"
+        case candidatesTokenCount = "candidates_token_count"
+        case totalTokenCount = "total_token_count"
+    }
+}
+
+// MARK: - Gemini LLM Service
+class GeminiLLMService {
     
     private let apiKey: String
     private let model: String
     private let urlSession: URLSession
-    private let baseURL = "https://api.anthropic.com/v1/messages"
+    private let baseURL = "https://generativelanguage.googleapis.com/v1beta/models"
     
-    init(apiKey: String, model: String = "claude-3-5-haiku-20241022") {
+    init(apiKey: String, model: String = "gemini-2.0-flash-exp") {
         self.apiKey = apiKey
         self.model = model
         
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 60.0
-        config.timeoutIntervalForResource = 120.0
+        config.timeoutIntervalForRequest = 30.0  // Faster timeout for Gemini
+        config.timeoutIntervalForResource = 60.0
         self.urlSession = URLSession(configuration: config)
     }
     
@@ -119,7 +210,6 @@ class ClaudeLLMService {
         }
         
         let systemPrompt = buildSystemPrompt(context: context)
-        let userMessage = ClaudeMessage(role: "user", content: [ClaudeContent(text: userInput)])
         
         // Calculate dynamic token limit based on window count
         let baseTokens = 2000
@@ -127,13 +217,14 @@ class ClaudeLLMService {
         let calculatedTokens = baseTokens + (tokensPerWindow * (context?.visibleWindows.count ?? 1))
         let maxTokens = min(max(calculatedTokens, 2000), 8000) // Between 2000-8000 tokens
         
-        let request = ClaudeRequest(
-            model: model,
-            maxTokens: maxTokens,
-            temperature: 0.1, // Low temperature for more deterministic function calling
-            system: systemPrompt,
-            messages: [userMessage],
-            tools: WindowManagementTools.allTools
+        let request = GeminiRequest(
+            contents: [GeminiContent(parts: [GeminiPart(text: userInput)])],
+            tools: convertToGeminiTools(WindowManagementTools.allTools),
+            systemInstruction: GeminiSystemInstruction(parts: [GeminiPart(text: systemPrompt)]),
+            generationConfig: GeminiGenerationConfig(
+                temperature: 0.1,  // Low temperature for more deterministic function calling
+                maxOutputTokens: maxTokens
+            )
         )
         
         let response = try await sendRequest(request)
@@ -149,7 +240,32 @@ class ClaudeLLMService {
         return commands
     }
     
-    // MARK: - System Prompt
+    // MARK: - Tool Conversion
+    private func convertToGeminiTools(_ tools: [LLMTool]) -> [GeminiTool] {
+        let functionDeclarations = tools.map { tool in
+            let properties = tool.input_schema.properties.mapValues { prop in
+                GeminiProperty(
+                    type: prop.type,
+                    description: prop.description,
+                    options: prop.enum
+                )
+            }
+            
+            return GeminiFunctionDeclaration(
+                name: tool.name,
+                description: tool.description,
+                parameters: GeminiParameters(
+                    type: "object",
+                    properties: properties,
+                    required: tool.input_schema.required
+                )
+            )
+        }
+        
+        return [GeminiTool(functionDeclarations: functionDeclarations)]
+    }
+    
+    // MARK: - System Prompt (Reuse existing logic)
     private func buildSystemPrompt(context: LLMContext?) -> String {
         // Get intelligent pattern hints
         let patternHints = buildPatternHints(context: context)
@@ -316,7 +432,7 @@ class ClaudeLLMService {
         - Control layer/z-index for proper window stacking (0=back, 3=front)
         
         **For simple operations:**
-        - Use `move_window` or `resize_window` for basic positioning/sizing
+        - Use `resize_window` for basic sizing
         - Use `snap_window` for standard positions (left/right/corners)
         
         **For complex arrangements:**
@@ -326,7 +442,7 @@ class ClaudeLLMService {
         **Decision criteria:**
         - If layout analysis shows specific problems → use precision tools to fix them
         - If user wants "maximize coverage" → use multiple `flexible_position` calls
-        - If user wants specific positions → use `move_window` or `flexible_position`
+        - If user wants specific positions → use `flexible_position`
         - If user wants generic "arrange" → use multiple precision tools for coordinated layouts
         
         **PRECISION TOOL EXAMPLES:**
@@ -344,7 +460,7 @@ class ClaudeLLMService {
         resize_window(app_name: "Terminal", size: "custom", custom_width: "35")
         
         // If Arc is positioned off-screen:
-        move_window(app_name: "Arc", position: "right")
+        snap_window(app_name: "Arc", position: "right")
         
         // If windows have poor coverage (only 60%):
         flexible_position(app_name: "MainApp", x_position: "0", y_position: "0", width: "70", height: "100", layer: 3)
@@ -354,7 +470,7 @@ class ClaudeLLMService {
         **PREFER PRECISION OVER GENERIC:**
         - When you can calculate exact positions for better coverage → use `flexible_position`
         - When you see specific sizing problems → use `resize_window` with custom percentages
-        - When you see positioning problems → use `move_window` or `flexible_position`
+        - When you see positioning problems → use `flexible_position`
         - Use multiple `flexible_position` calls to create intelligent cascaded arrangements
         
         **USER EXAMPLE OUTPUTS:**
@@ -509,16 +625,15 @@ class ClaudeLLMService {
     }
     
     // MARK: - Network Request
-    private func sendRequest(_ request: ClaudeRequest) async throws -> ClaudeResponse {
-        guard let url = URL(string: baseURL) else {
-            throw ClaudeLLMError.invalidURL
+    private func sendRequest(_ request: GeminiRequest) async throws -> GeminiResponse {
+        let urlString = "\(baseURL)/\(model):generateContent?key=\(apiKey)"
+        guard let url = URL(string: urlString) else {
+            throw GeminiLLMError.invalidURL
         }
         
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        urlRequest.setValue(apiKey, forHTTPHeaderField: "x-api-key")
-        urlRequest.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         
         do {
             let encoder = JSONEncoder()
@@ -526,93 +641,90 @@ class ClaudeLLMService {
             let requestData = try encoder.encode(request)
             urlRequest.httpBody = requestData
             
-            // Debug: Print only user message
-            if let jsonObj = try? JSONSerialization.jsonObject(with: requestData) as? [String: Any],
-               let messages = jsonObj["messages"] as? [[String: Any]],
-               let firstMessage = messages.first,
-               let content = firstMessage["content"] as? [[String: Any]],
-               let textContent = content.first?["text"] as? String {
-                // User input already printed above
-            }
-            
             let (data, response) = try await urlSession.data(for: urlRequest)
             
             guard let httpResponse = response as? HTTPURLResponse else {
-                throw ClaudeLLMError.invalidResponse
+                throw GeminiLLMError.invalidResponse
             }
             
             guard 200...299 ~= httpResponse.statusCode else {
                 if let errorData = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                    let error = errorData["error"] as? [String: Any],
                    let message = error["message"] as? String {
-                    throw ClaudeLLMError.apiError(message)
+                    throw GeminiLLMError.apiError(message)
                 }
-                throw ClaudeLLMError.httpError(httpResponse.statusCode)
+                throw GeminiLLMError.httpError(httpResponse.statusCode)
             }
             
-            let claudeResponse = try JSONDecoder().decode(ClaudeResponse.self, from: data)
-            return claudeResponse
+            let geminiResponse = try JSONDecoder().decode(GeminiResponse.self, from: data)
+            return geminiResponse
             
-        } catch let error as ClaudeLLMError {
+        } catch let error as GeminiLLMError {
             throw error
         } catch {
-            throw ClaudeLLMError.networkError(error)
+            throw GeminiLLMError.networkError(error)
         }
     }
     
     // MARK: - Response Parsing
-    private func parseCommandsFromResponse(_ response: ClaudeResponse) throws -> [WindowCommand] {
+    private func parseCommandsFromResponse(_ response: GeminiResponse) throws -> [WindowCommand] {
         var commands: [WindowCommand] = []
         
-        print("\n📋 CLAUDE'S TOOL CALLS:")
-        print("  Total content blocks: \(response.content.count)")
+        print("\n📋 GEMINI'S FUNCTION CALLS:")
+        print("  Total candidates: \(response.candidates.count)")
         
-        for (index, content) in response.content.enumerated() {
-            print("  Content block \(index + 1): type=\(content.type)")
+        guard let firstCandidate = response.candidates.first else {
+            throw GeminiLLMError.noCommandsGenerated
+        }
+        
+        for (index, part) in firstCandidate.content.parts.enumerated() {
+            print("  Content part \(index + 1): type=\(part.functionCall != nil ? "function_call" : "text")")
             
-            if content.type == "tool_use",
-               let id = content.id,
-               let name = content.name,
-               let input = content.input {
-                
-                // Print the tool call
+            if let functionCall = part.functionCall {
+                // Print the function call
                 var inputStr = "("
-                for (key, value) in input {
+                for (key, value) in functionCall.args {
                     if inputStr.count > 1 { inputStr += ", " }
                     inputStr += "\(key): \"\(value.value)\""
                 }
                 inputStr += ")"
-                print("  → \(name)\(inputStr)")
+                print("  → \(functionCall.name)\(inputStr)")
                 
-                let toolUse = LLMToolUse(id: id, name: name, input: input)
+                // Convert to LLMToolUse format
+                let toolUseInput = functionCall.args.mapValues { AnyCodable($0.value) }
+                let toolUse = LLMToolUse(
+                    id: UUID().uuidString,
+                    name: functionCall.name,
+                    input: toolUseInput
+                )
                 
                 if let command = ToolToCommandConverter.convertToolUse(toolUse) {
                     commands.append(command)
                     print("    ✓ Command added to list (total: \(commands.count))")
                 } else {
-                    print("    ✗ Failed to convert tool use to command")
+                    print("    ✗ Failed to convert function call to command")
                 }
-            } else if let text = content.text {
+            } else if let text = part.text {
                 print("    Text: \(text)")
             }
         }
         
         if commands.isEmpty {
-            // If no tool calls were made, extract any text response
-            let textResponses = response.content.compactMap { $0.text }.joined(separator: " ")
+            // If no function calls were made, extract any text response
+            let textResponses = firstCandidate.content.parts.compactMap { $0.text }.joined(separator: " ")
             if !textResponses.isEmpty {
-                print("  ❌ No tool calls, just text: \(textResponses)")
-                throw ClaudeLLMError.noToolsUsed(textResponses)
+                print("  ❌ No function calls, just text: \(textResponses)")
+                throw GeminiLLMError.noToolsUsed(textResponses)
             } else {
                 print("  ❌ No commands generated")
-                throw ClaudeLLMError.noCommandsGenerated
+                throw GeminiLLMError.noCommandsGenerated
             }
         }
         
         return commands
     }
     
-    // MARK: - Pattern Hints
+    // MARK: - Pattern Hints (Reuse existing logic)
     private func buildPatternHints(context: LLMContext?) -> String {
         guard let context = context else { return "" }
         
@@ -637,38 +749,14 @@ class ClaudeLLMService {
         return patternManager.generateLLMHints(from: patterns)
     }
     
-    // MARK: - Context Building
-    func buildCurrentContext(windowManager: WindowManager) -> LLMContext {
-        let runningApps = NSWorkspace.shared.runningApplications
-            .compactMap { $0.localizedName }
-            .filter { !["Dock", "SystemUIServer", "WindowServer"].contains($0) }
-        
-        let allWindows = windowManager.getAllWindows()
-        let visibleWindows = allWindows.map { window in
-            LLMContext.WindowSummary(
-                title: window.title,
-                appName: window.appName,
-                bounds: window.bounds,
-                isMinimized: !windowManager.isWindowVisible(window),
-                displayIndex: 0 // TODO: Calculate actual display index
-            )
-        }
-        
-        let screenResolutions = NSScreen.screens.map { $0.frame.size }
-        
-        return LLMContext(
-            runningApps: runningApps,
-            visibleWindows: visibleWindows,
-            screenResolutions: screenResolutions,
-            currentWorkspace: nil,
-            displayCount: NSScreen.screens.count,
-            userPreferences: nil
-        )
+    // MARK: - Configuration Validation
+    func validateConfiguration() -> Bool {
+        return !apiKey.isEmpty
     }
 }
 
 // MARK: - Error Types
-enum ClaudeLLMError: Error, LocalizedError {
+enum GeminiLLMError: Error, LocalizedError {
     case invalidURL
     case invalidResponse
     case networkError(Error)
@@ -683,15 +771,15 @@ enum ClaudeLLMError: Error, LocalizedError {
         case .invalidURL:
             return "Invalid API URL"
         case .invalidResponse:
-            return "Invalid response from Claude API"
+            return "Invalid response from Gemini API"
         case .networkError(let error):
             return "Network error: \(error.localizedDescription)"
         case .apiError(let message):
-            return "Claude API error: \(message)"
+            return "Gemini API error: \(message)"
         case .httpError(let code):
             return "HTTP error: \(code)"
         case .noToolsUsed(let response):
-            return "Claude responded with text instead of using tools: \(response)"
+            return "Gemini responded with text instead of using tools: \(response)"
         case .noCommandsGenerated:
             return "No window management commands were generated"
         case .parsingError(let message):
