@@ -341,6 +341,8 @@ struct APISetupStep: View {
                 preferences.openAIAPIKey = key
             case .anthropic:
                 preferences.anthropicAPIKey = key
+            case .gemini:
+                preferences.geminiAPIKey = key
             case .local:
                 break
             }
@@ -354,6 +356,8 @@ struct APISetupStep: View {
             url = URL(string: "https://platform.openai.com/api-keys")!
         case .anthropic:
             url = URL(string: "https://console.anthropic.com/")!
+        case .gemini:
+            url = URL(string: "https://console.cloud.google.com/apis/credentials")!
         case .local:
             return
         }

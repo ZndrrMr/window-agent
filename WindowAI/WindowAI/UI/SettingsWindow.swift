@@ -362,6 +362,9 @@ struct LLMSettingsView: View {
                 } else if preferences.llmProvider == .anthropic {
                     SecureField("Anthropic API Key", text: $preferences.anthropicAPIKey)
                         .textFieldStyle(RoundedBorderTextFieldStyle())
+                } else if preferences.llmProvider == .gemini {
+                    SecureField("Gemini API Key", text: $preferences.geminiAPIKey)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
                 }
                 
                 HStack {
@@ -402,6 +405,7 @@ struct LLMSettingsView: View {
         switch preferences.llmProvider {
         case .openAI: return preferences.openAIAPIKey
         case .anthropic: return preferences.anthropicAPIKey
+        case .gemini: return preferences.geminiAPIKey
         case .local: return "local"
         }
     }
