@@ -20,7 +20,7 @@ class UserPreferences: ObservableObject {
     @Published var temperature: Double = 0.3
     
     // MARK: - UI Settings
-    @Published var showOnboarding: Bool = true
+    @Published var showOnboarding: Bool = false
     @Published var commandWindowOpacity: Double = 0.95
     @Published var commandWindowCornerRadius: Double = 12.0
     @Published var showCommandSuggestions: Bool = true

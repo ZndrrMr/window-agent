@@ -17,6 +17,36 @@ class WindowPositioner {
         self.cascadePositioner = CascadePositioner(windowManager: windowManager)
     }
     
+    // MARK: - Animated Command Execution
+    func executeCommandAnimated(_ command: WindowCommand, completion: @escaping (CommandResult) -> Void) {
+        switch command.action {
+        case .move:
+            executeAnimatedMove(command, completion: completion)
+        case .resize:
+            executeAnimatedResize(command, completion: completion)
+        case .snap:
+            executeAnimatedSnap(command, completion: completion)
+        case .maximize:
+            executeAnimatedMaximize(command, completion: completion)
+        case .minimize:
+            executeAnimatedMinimize(command, completion: completion)
+        case .focus:
+            executeAnimatedFocus(command, completion: completion)
+        case .restore:
+            executeAnimatedRestore(command, completion: completion)
+        case .arrange:
+            executeAnimatedArrange(command, completion: completion)
+        case .tile:
+            executeAnimatedTile(command, completion: completion)
+        case .stack:
+            executeAnimatedCascade(command, completion: completion)
+        default:
+            // For non-animated commands, execute synchronously
+            let result = executeCommand(command)
+            completion(result)
+        }
+    }
+
     // MARK: - Public API
     func executeCommand(_ command: WindowCommand) -> CommandResult {
         switch command.action {
@@ -1406,5 +1436,219 @@ class WindowPositioner {
         }
         
         return success
+    }
+    
+    // MARK: - Animated Command Implementations
+    
+    private func executeAnimatedMove(_ command: WindowCommand, completion: @escaping (CommandResult) -> Void) {
+        guard let windows = getTargetWindows(command.target), let window = windows.first else {
+            completion(CommandResult(success: false, message: "Could not find window for '\(command.target)'", command: command))
+            return
+        }
+        
+        let displayIndex = command.display ?? 0
+        var position: CGPoint
+        
+        if command.position == .precise, let customPosition = command.customPosition {
+            position = customPosition
+        } else if let customPosition = command.customPosition {
+            position = customPosition
+        } else if let windowPosition = command.position {
+            let size = command.customSize ?? window.bounds.size
+            position = calculatePosition(windowPosition, size: size, on: displayIndex)
+        } else {
+            completion(CommandResult(success: false, message: "No position specified", command: command))
+            return
+        }
+        
+        // Apply learned position offset if available
+        if let preferredOffset = learningService.getPreferredPositionOffset(for: window.appName) {
+            position.x += preferredOffset.x
+            position.y += preferredOffset.y
+        }
+        
+        let preset = AnimationPresets.presetForOperation(.move)
+        windowManager.moveWindowAnimated(window, to: position, preset: preset) {
+            // Record this arrangement for learning
+            let newBounds = CGRect(origin: position, size: window.bounds.size)
+            self.learningService.recordWindowArrangement(
+                windows: [window],
+                arrangedBounds: [window.appName: newBounds],
+                context: "animated_move_\(command.position?.rawValue ?? "custom")"
+            )
+            
+            let message = "Animated move of \(command.target) to \(position)"
+            completion(CommandResult(success: true, message: message, command: command))
+        }
+    }
+    
+    private func executeAnimatedResize(_ command: WindowCommand, completion: @escaping (CommandResult) -> Void) {
+        guard let windows = getTargetWindows(command.target), let window = windows.first else {
+            completion(CommandResult(success: false, message: "Could not find window for '\(command.target)'", command: command))
+            return
+        }
+        
+        let displayIndex = command.display ?? 0
+        var size: CGSize
+        
+        if let customSize = command.customSize {
+            size = customSize
+        } else if let windowSize = command.size {
+            size = calculateSize(windowSize, for: window.appName, on: displayIndex)
+        } else {
+            completion(CommandResult(success: false, message: "No size specified", command: command))
+            return
+        }
+        
+        let preset = AnimationPresets.presetForOperation(.resize)
+        windowManager.resizeWindowAnimated(window, to: size, preset: preset) {
+            let message = "Animated resize of \(command.target) to \(size)"
+            completion(CommandResult(success: true, message: message, command: command))
+        }
+    }
+    
+    private func executeAnimatedSnap(_ command: WindowCommand, completion: @escaping (CommandResult) -> Void) {
+        guard let windows = getTargetWindows(command.target), let window = windows.first else {
+            completion(CommandResult(success: false, message: "Could not find window for '\(command.target)'", command: command))
+            return
+        }
+        
+        guard let position = command.position else {
+            completion(CommandResult(success: false, message: "No snap position specified", command: command))
+            return
+        }
+        
+        let displayIndex = command.display ?? 0
+        let sizeType = command.size ?? .medium
+        let size = calculateSize(sizeType, for: window.appName, on: displayIndex)
+        let snapPosition = calculatePosition(position, size: size, on: displayIndex)
+        let bounds = CGRect(origin: snapPosition, size: size)
+        
+        windowManager.snapWindowAnimated(window, to: bounds) {
+            let message = "Snapped \(command.target) to \(position.rawValue)"
+            completion(CommandResult(success: true, message: message, command: command))
+        }
+    }
+    
+    private func executeAnimatedMaximize(_ command: WindowCommand, completion: @escaping (CommandResult) -> Void) {
+        guard let windows = getTargetWindows(command.target), let window = windows.first else {
+            completion(CommandResult(success: false, message: "Could not find window for '\(command.target)'", command: command))
+            return
+        }
+        
+        windowManager.maximizeWindowAnimated(window) {
+            let message = "Maximized \(command.target)"
+            completion(CommandResult(success: true, message: message, command: command))
+        }
+    }
+    
+    private func executeAnimatedMinimize(_ command: WindowCommand, completion: @escaping (CommandResult) -> Void) {
+        guard let windows = getTargetWindows(command.target), let window = windows.first else {
+            completion(CommandResult(success: false, message: "Could not find window for '\(command.target)'", command: command))
+            return
+        }
+        
+        // Use instant animation for minimize (it's handled by system)
+        let success = windowManager.minimizeWindow(window)
+        let message = success ? "Minimized \(command.target)" : "Failed to minimize \(command.target)"
+        completion(CommandResult(success: success, message: message, command: command))
+    }
+    
+    private func executeAnimatedFocus(_ command: WindowCommand, completion: @escaping (CommandResult) -> Void) {
+        guard let windows = getTargetWindows(command.target), let window = windows.first else {
+            completion(CommandResult(success: false, message: "Could not find window for '\(command.target)'", command: command))
+            return
+        }
+        
+        windowManager.focusWindowAnimated(window) {
+            let message = "Focused \(command.target)"
+            completion(CommandResult(success: true, message: message, command: command))
+        }
+    }
+    
+    private func executeAnimatedRestore(_ command: WindowCommand, completion: @escaping (CommandResult) -> Void) {
+        guard let windows = getTargetWindows(command.target), let window = windows.first else {
+            completion(CommandResult(success: false, message: "Could not find window for '\(command.target)'", command: command))
+            return
+        }
+        
+        windowManager.restoreWindowAnimated(window) {
+            let message = "Restored \(command.target)"
+            completion(CommandResult(success: true, message: message, command: command))
+        }
+    }
+    
+    private func executeAnimatedArrange(_ command: WindowCommand, completion: @escaping (CommandResult) -> Void) {
+        // For arrange commands, we need to handle multiple windows
+        let result = arrangeWorkspace(command)
+        
+        // If the synchronous version succeeded, we'll add animation
+        if result.success {
+            // Get all windows that were arranged
+            let allWindows = windowManager.getAllWindows()
+            let targetWindows = allWindows.filter { window in
+                // Filter based on workspace context
+                return true // For now, animate all visible windows
+            }
+            
+            // Create animated arrangement with staggered timing
+            let configuration = AnimationConfiguration(
+                preset: AnimationPresets.presetForContext(command.target),
+                staggerDelay: 0.1,
+                coordinatedExecution: true,
+                respectsReducedMotion: true
+            )
+            
+            // Apply the current positions as animated transitions
+            let operations = targetWindows.map { window in
+                (window, window.bounds)
+            }
+            
+            windowManager.animateWindowsCoordinated(operations, configuration: configuration) {
+                completion(result)
+            }
+        } else {
+            completion(result)
+        }
+    }
+    
+    private func executeAnimatedTile(_ command: WindowCommand, completion: @escaping (CommandResult) -> Void) {
+        // Execute tiling and then add animations
+        let result = tileWindows(command)
+        
+        if result.success {
+            // Animate the tiling result
+            let allWindows = windowManager.getAllWindows()
+            let operations = allWindows.map { window in
+                (window, window.bounds)
+            }
+            
+            windowManager.animateWindowsCoordinated(operations, configuration: .performance) {
+                completion(result)
+            }
+        } else {
+            completion(result)
+        }
+    }
+    
+    private func executeAnimatedCascade(_ command: WindowCommand, completion: @escaping (CommandResult) -> Void) {
+        // Execute cascade and then add staggered animations
+        let result = cascadeWindows(command)
+        
+        if result.success {
+            let allWindows = windowManager.getAllWindows()
+            let cascadeOrigin = CGPoint(x: 100, y: 100)
+            
+            let defaultCascade = CascadeConfiguration(
+                style: .standard,
+                offset: .standard,
+                priority: .balanced
+            )
+            windowManager.cascadeWindowsAnimated(allWindows, startingAt: cascadeOrigin, cascade: defaultCascade) {
+                completion(result)
+            }
+        } else {
+            completion(result)
+        }
     }
 }

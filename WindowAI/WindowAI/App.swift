@@ -410,7 +410,21 @@ class WindowAIController: HotkeyManagerDelegate, LLMServiceDelegate {
     
     private func executeCommands(_ commands: [WindowCommand]) async {
         let startTime = Date()
-        let results = await commandExecutor.executeCommands(commands)
+        
+        // Use animated commands if animations are enabled and it's a single window operation
+        let results: [CommandResult]
+        if UserPreferences.shared.animateWindowMovement && commands.count == 1 {
+            print("🎬 Executing single command with animation")
+            results = await commandExecutor.executeCommandsAnimated(commands)
+        } else {
+            if commands.count > 1 {
+                print("⚡ Executing \(commands.count) commands without animations (multi-window)")
+            } else {
+                print("⚡ Executing commands without animations")
+            }
+            results = await commandExecutor.executeCommands(commands)
+        }
+        
         let duration = Date().timeIntervalSince(startTime)
         
         // Track analytics for each command
@@ -435,6 +449,9 @@ class WindowAIController: HotkeyManagerDelegate, LLMServiceDelegate {
 extension WindowAIController {
     func hotkeyPressed() {
         print("🔥 Hotkey pressed! Window visible: \(commandWindow.isVisible)")
+        
+        // Cancel any pending animations to ensure UI responsiveness
+        AnimationQueue.shared.emergencyReset()
         
         // Prevent multiple rapid hotkey presses
         DispatchQueue.main.async {

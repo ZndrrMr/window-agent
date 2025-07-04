@@ -339,6 +339,182 @@ class WindowManager {
         return windows.first // Usually the first window is the frontmost
     }
     
+    // MARK: - Animated Window Operations
+    
+    /// Move window with animation
+    func moveWindowAnimated(_ windowInfo: WindowInfo, to position: CGPoint, preset: AnimationPreset = AnimationPresets.defaultSmooth, completion: (() -> Void)? = nil) {
+        AnimationQueue.shared.queueAnimation(
+            id: "move_\(windowInfo.appName)_\(Date().timeIntervalSince1970)",
+            windowInfo: windowInfo,
+            operation: .move(position),
+            preset: preset,
+            completion: completion
+        )
+    }
+    
+    /// Resize window with animation
+    func resizeWindowAnimated(_ windowInfo: WindowInfo, to size: CGSize, preset: AnimationPreset = AnimationPresets.defaultSmooth, completion: (() -> Void)? = nil) {
+        AnimationQueue.shared.queueAnimation(
+            id: "resize_\(windowInfo.appName)_\(Date().timeIntervalSince1970)",
+            windowInfo: windowInfo,
+            operation: .resize(size),
+            preset: preset,
+            completion: completion
+        )
+    }
+    
+    /// Set window bounds with animation
+    func setWindowBoundsAnimated(_ windowInfo: WindowInfo, bounds: CGRect, preset: AnimationPreset = AnimationPresets.defaultSmooth, completion: (() -> Void)? = nil) {
+        AnimationQueue.shared.queueAnimation(
+            id: "bounds_\(windowInfo.appName)_\(Date().timeIntervalSince1970)",
+            windowInfo: windowInfo,
+            operation: .bounds(bounds),
+            preset: preset,
+            completion: completion
+        )
+    }
+    
+    /// Maximize window with animation
+    func maximizeWindowAnimated(_ windowInfo: WindowInfo, completion: (() -> Void)? = nil) {
+        // Calculate maximize bounds
+        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(windowInfo.bounds.origin) }) ?? NSScreen.main else {
+            completion?()
+            return
+        }
+        
+        let maximizeBounds = CGRect(
+            x: screen.frame.origin.x,
+            y: screen.visibleFrame.origin.y,
+            width: screen.frame.width,
+            height: screen.visibleFrame.height
+        )
+        
+        AnimationQueue.shared.queueAnimation(
+            id: "maximize_\(windowInfo.appName)_\(Date().timeIntervalSince1970)",
+            windowInfo: windowInfo,
+            operation: .bounds(maximizeBounds),
+            preset: AnimationPresets.maximize,
+            completion: completion
+        )
+    }
+    
+    /// Restore window with animation
+    func restoreWindowAnimated(_ windowInfo: WindowInfo, to bounds: CGRect? = nil, completion: (() -> Void)? = nil) {
+        let targetBounds = bounds ?? CGRect(
+            x: windowInfo.bounds.origin.x,
+            y: windowInfo.bounds.origin.y,
+            width: 800,
+            height: 600
+        )
+        
+        // First handle unminimizing if needed
+        if isWindowMinimized(windowInfo) {
+            let restoreResult = AXUIElementSetAttributeValue(windowInfo.windowRef, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
+            if restoreResult == .success {
+                // Activate the app
+                if let bundleID = getBundleID(for: windowInfo.appName),
+                   let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first {
+                    app.activate()
+                }
+                
+                // Small delay then animate to target bounds
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    AnimationQueue.shared.queueRestoreAnimation(for: windowInfo, to: targetBounds)
+                    completion?()
+                }
+            } else {
+                completion?()
+            }
+        } else {
+            AnimationQueue.shared.queueRestoreAnimation(for: windowInfo, to: targetBounds)
+            completion?()
+        }
+    }
+    
+    /// Focus window with subtle animation
+    func focusWindowAnimated(_ windowInfo: WindowInfo, completion: (() -> Void)? = nil) {
+        // Focus immediately, then add subtle animation
+        let focusSuccess = focusWindow(windowInfo)
+        
+        if focusSuccess {
+            AnimationQueue.shared.queueFocusAnimation(for: windowInfo)
+        }
+        
+        completion?()
+    }
+    
+    /// Snap window to position with quick animation
+    func snapWindowAnimated(_ windowInfo: WindowInfo, to bounds: CGRect, completion: (() -> Void)? = nil) {
+        // Check if animations are enabled
+        guard UserPreferences.shared.animateWindowMovement else {
+            _ = setWindowBounds(windowInfo, bounds: bounds)
+            completion?()
+            return
+        }
+        
+        AnimationQueue.shared.queueAnimation(
+            id: "snap_\(windowInfo.appName)_\(Date().timeIntervalSince1970)",
+            windowInfo: windowInfo,
+            operation: .bounds(bounds),
+            preset: AnimationPresets.snap,
+            completion: completion
+        )
+    }
+    
+    // MARK: - Batch Animated Operations
+    
+    /// Animate multiple windows in coordinated fashion
+    func animateWindowsCoordinated(_ operations: [(WindowInfo, CGRect)], configuration: AnimationConfiguration = .default, completion: (() -> Void)? = nil) {
+        let windowOperations = operations.map { (windowInfo, bounds) in
+            (windowInfo, AnimationOperation.bounds(bounds))
+        }
+        
+        AnimationQueue.shared.queueCoordinatedAnimations(
+            windowOperations,
+            preset: configuration.preset,
+            staggerDelay: configuration.staggerDelay,
+            completion: completion
+        )
+    }
+    
+    /// Cascade multiple windows with staggered animation
+    func cascadeWindowsAnimated(_ windows: [WindowInfo], startingAt origin: CGPoint, cascade: CascadeConfiguration, completion: (() -> Void)? = nil) {
+        var operations: [(WindowInfo, CGRect)] = []
+        
+        for (index, window) in windows.enumerated() {
+            let offset = CGPoint(
+                x: origin.x + (CGFloat(index) * CGFloat(cascade.offset.horizontal)),
+                y: origin.y + (CGFloat(index) * CGFloat(cascade.offset.vertical))
+            )
+            
+            let bounds = CGRect(origin: offset, size: window.bounds.size)
+            operations.append((window, bounds))
+        }
+        
+        AnimationQueue.shared.queueCoordinatedAnimations(
+            operations.map { ($0.0, .bounds($0.1)) },
+            preset: AnimationPresets.cascade,
+            staggerDelay: 0.1,
+            completion: completion
+        )
+    }
+    
+    /// Arrange workspace with smooth transitions
+    func arrangeWorkspaceAnimated(_ windows: [WindowInfo], layout: [(CGRect)], completion: (() -> Void)? = nil) {
+        guard windows.count == layout.count else {
+            print("❌ Window count doesn't match layout count")
+            completion?()
+            return
+        }
+        
+        AnimationQueue.shared.queueWorkspaceTransition(
+            windows: windows,
+            targetBounds: layout,
+            configuration: AnimationConfiguration.fromSystemPreferences(),
+            completion: completion
+        )
+    }
+
     // MARK: - Window Manipulation
     func moveWindow(_ windowInfo: WindowInfo, to position: CGPoint) -> Bool {
         guard checkAccessibilityPermissions() else { 
@@ -801,3 +977,4 @@ extension WindowManager {
         return validatedBounds
     }
 }
+
