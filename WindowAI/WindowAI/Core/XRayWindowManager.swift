@@ -558,26 +558,38 @@ class XRayWindowManager {
             window.bounds.height > 50
         }
         
-        // HYBRID MODE: Fast position checks + minimization detection
-        // Use position heuristics AND fast minimization checks (with timeout protection)
-        let visibleWindows = candidateWindows.compactMap { window -> WindowInfo? in
-            // 1. Position-based visibility heuristic (instant)
-            guard window.bounds.origin.x > -5000 && window.bounds.origin.y > -5000 else {
-                return nil // Obviously hidden/off-screen
+        // PARALLEL MODE: Fast position checks + parallel minimization detection
+        // Use TaskGroup for concurrent processing to eliminate sequential bottleneck
+        let visibleWindows = await withTaskGroup(of: WindowInfo?.self, returning: [WindowInfo].self) { group in
+            for window in candidateWindows {
+                group.addTask {
+                    // 1. Position-based visibility heuristic (instant)
+                    guard window.bounds.origin.x > -5000 && window.bounds.origin.y > -5000 else {
+                        return nil // Obviously hidden/off-screen
+                    }
+                    
+                    // 2. Parallel minimization check (async, no timeout overhead)
+                    let isVisible = await WindowManager.shared.isWindowVisibleAsync(window)
+                    guard isVisible else {
+                        return nil // Minimized window - exclude from X-Ray
+                    }
+                    
+                    // 3. Fast Finder filtering for performance
+                    if !FinderDetection.shouldShowFinderWindowFast(window) {
+                        return nil
+                    }
+                    
+                    return window
+                }
             }
             
-            // 2. Fast minimization check with timeout (50ms max per window)
-            let isVisible = WindowManager.shared.isWindowVisible(window)
-            guard isVisible else {
-                return nil // Minimized window - exclude from X-Ray
+            var results: [WindowInfo] = []
+            for await window in group {
+                if let window = window {
+                    results.append(window)
+                }
             }
-            
-            // 3. Fast Finder filtering for performance
-            if !FinderDetection.shouldShowFinderWindowFast(window) {
-                return nil
-            }
-            
-            return window
+            return results
         }
         
         // Clean up old Finder tracking data periodically
