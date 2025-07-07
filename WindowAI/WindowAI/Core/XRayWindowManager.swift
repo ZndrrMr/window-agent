@@ -705,6 +705,9 @@ extension XRayWindowManager {
         
         // Test 5: Direct performance
         allTestsPassed = testDirectPerformance() && allTestsPassed
+        
+        // Test 6: TDD Performance Requirements (NEW - Expected to fail initially)
+        allTestsPassed = testTDDPerformanceRequirements() && allTestsPassed
     }
     
     private func testShowPerformance() -> Bool {
@@ -830,6 +833,142 @@ extension XRayWindowManager {
     /// Run detailed performance analysis to identify bottlenecks
     func runDetailedPerformanceAnalysis() {
         debugPerformanceComparison()
+    }
+    
+    /// TDD Performance Requirements Test - EXPECTED TO FAIL initially
+    /// Tests the stricter <0.5s requirements for complete X-Ray display
+    private func testTDDPerformanceRequirements() -> Bool {
+        print("\n🧪 TDD PERFORMANCE REQUIREMENTS TEST")
+        print("   ⚠️  EXPECTED TO FAIL - Current performance ~10s, target <0.5s")
+        print(String(repeating: "=", count: 50))
+        
+        var allTestsPassed = true
+        var results: [String] = []
+        
+        // Test 1: Total End-to-End Display Time (<0.5s)
+        print("\n📋 Test 1: Total X-Ray Display Time")
+        print("   Target: <0.5s")
+        
+        let startTotal = Date()
+        showXRayOverlay()
+        let totalDuration = Date().timeIntervalSince(startTotal)
+        
+        let totalPassed = totalDuration < 0.5
+        let totalStatus = totalPassed ? "✅ PASS" : "❌ FAIL"
+        let totalResult = "   Result: \(totalStatus) - \(String(format: "%.3f", totalDuration))s"
+        print(totalResult)
+        results.append("Total Display: \(String(format: "%.3f", totalDuration))s (\(totalPassed ? "PASS" : "FAIL"))")
+        
+        if !totalPassed { allTestsPassed = false }
+        
+        // Test 2: Window Discovery Time (<0.3s)
+        print("\n📋 Test 2: Window Discovery Time")
+        print("   Target: <0.3s")
+        
+        let startDiscovery = Date()
+        let windows = getVisibleWindowsUltraFast()
+        let discoveryDuration = Date().timeIntervalSince(startDiscovery)
+        
+        let discoveryPassed = discoveryDuration < 0.3
+        let discoveryStatus = discoveryPassed ? "✅ PASS" : "❌ FAIL"
+        let discoveryResult = "   Result: \(discoveryStatus) - \(String(format: "%.3f", discoveryDuration))s (\(windows.count) windows)"
+        print(discoveryResult)
+        results.append("Window Discovery: \(String(format: "%.3f", discoveryDuration))s (\(discoveryPassed ? "PASS" : "FAIL"))")
+        
+        if !discoveryPassed { allTestsPassed = false }
+        
+        // Test 3: Individual isWindowVisible() Performance (<0.05s each)
+        print("\n📋 Test 3: isWindowVisible() Call Performance")
+        print("   Target: <0.05s per call")
+        
+        let testWindows = Array(windows.prefix(5)) // Test first 5 windows
+        var visibilityPassed = true
+        var maxVisibilityTime: Double = 0
+        
+        for (index, window) in testWindows.enumerated() {
+            let startVis = Date()
+            let _ = WindowManager.shared.isWindowVisible(window)
+            let visDuration = Date().timeIntervalSince(startVis)
+            
+            maxVisibilityTime = max(maxVisibilityTime, visDuration)
+            
+            if visDuration >= 0.05 {
+                visibilityPassed = false
+            }
+            
+            let visStatus = visDuration < 0.05 ? "✅" : "❌"
+            print("   Window \(index + 1): \(visStatus) \(String(format: "%.3f", visDuration))s - \(window.appName)")
+        }
+        
+        let visibilityStatus = visibilityPassed ? "✅ PASS" : "❌ FAIL"
+        let visibilityResult = "   Result: \(visibilityStatus) - Max: \(String(format: "%.3f", maxVisibilityTime))s"
+        print(visibilityResult)
+        results.append("Visibility Checks: \(String(format: "%.3f", maxVisibilityTime))s max (\(visibilityPassed ? "PASS" : "FAIL"))")
+        
+        if !visibilityPassed { allTestsPassed = false }
+        
+        // Test 4: FinderDetection Performance (<0.1s)
+        print("\n📋 Test 4: FinderDetection Processing Time")
+        print("   Target: <0.1s total")
+        
+        let finderWindows = windows.filter { $0.appName.lowercased().contains("finder") }
+        var finderPassed = true
+        var finderDuration: Double = 0
+        
+        if !finderWindows.isEmpty {
+            let startFinder = Date()
+            for window in finderWindows {
+                let _ = FinderDetection.shouldShowFinderWindow(window)
+            }
+            finderDuration = Date().timeIntervalSince(startFinder)
+            finderPassed = finderDuration < 0.1
+        }
+        
+        let finderStatus = finderPassed ? "✅ PASS" : "❌ FAIL"
+        let finderResult = "   Result: \(finderStatus) - \(String(format: "%.3f", finderDuration))s (\(finderWindows.count) Finder windows)"
+        print(finderResult)
+        results.append("FinderDetection: \(String(format: "%.3f", finderDuration))s (\(finderPassed ? "PASS" : "FAIL"))")
+        
+        if !finderPassed { allTestsPassed = false }
+        
+        // Clean up
+        hideXRayOverlay()
+        
+        // Summary
+        print(String(repeating: "=", count: 50))
+        print("📊 TDD PERFORMANCE TEST SUMMARY")
+        
+        if allTestsPassed {
+            print("✅ ALL TDD REQUIREMENTS MET!")
+            print("   X-Ray system meets <0.5s performance target")
+        } else {
+            print("❌ TDD REQUIREMENTS FAILED")
+            print("   Performance optimizations needed:")
+            for result in results {
+                if result.contains("FAIL") {
+                    print("   🚨 \(result)")
+                }
+            }
+            print("\n💡 OPTIMIZATION SUGGESTIONS:")
+            if !visibilityPassed {
+                print("   • Add timeout protection to isWindowVisible() calls")
+                print("   • Use async/parallel window visibility checking")
+            }
+            if !discoveryPassed {
+                print("   • Implement aggressive app filtering (limit to 8-10 apps)")
+                print("   • Add circuit breaker for slow-responding apps")
+            }
+            if !finderPassed {
+                print("   • Simplify FinderDetection heuristic (remove expensive calculations)")
+            }
+            if !totalPassed {
+                print("   • Consider background window caching")
+                print("   • Skip expensive operations in fast-display mode")
+            }
+        }
+        
+        print(String(repeating: "=", count: 50))
+        return allTestsPassed
     }
 }
 #endif
