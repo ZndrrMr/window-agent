@@ -23,10 +23,8 @@ class WindowManager {
     }
     
     func requestAccessibilityPermissions() {
-        print("🔐 WindowManager: Requesting accessibility permissions...")
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true]
         let result = AXIsProcessTrustedWithOptions(options as CFDictionary)
-        print("🔐 WindowManager: Request result = \(result)")
     }
     
     // MARK: - Window Discovery
@@ -35,19 +33,138 @@ class WindowManager {
             return [] 
         }
         
-        var windows: [WindowInfo] = []
         let runningApps = NSWorkspace.shared.runningApplications
         
-        for app in runningApps {
-            if let bundleIdentifier = app.bundleIdentifier,
-               !bundleIdentifier.contains("com.apple.dock"),
-               !bundleIdentifier.contains("com.apple.systemuiserver") {
-                let appWindows = getWindowsForApp(pid: app.processIdentifier)
-                windows.append(contentsOf: appWindows)
+        var windows: [WindowInfo] = []
+        
+        // Known problematic apps that should be skipped or have shorter timeouts
+        let problematicApps = [
+            "com.apple.dock",
+            "com.apple.systemuiserver", 
+            "com.apple.windowserver",
+            "com.apple.loginwindow",
+            "com.apple.CoreSimulator.SimulatorTrampoline",
+            "com.docker.docker",
+            "com.apple.ActivityMonitor"
+        ]
+        
+        let relevantApps = runningApps.filter { app in
+            guard let bundleId = app.bundleIdentifier,
+                  let appName = app.localizedName else { return false }
+            
+            return !problematicApps.contains(bundleId) && 
+                   app.activationPolicy == .regular
+        }
+        
+        
+        for app in relevantApps {
+            // Use timeout for each app to prevent hanging
+            let appWindows = getWindowsForAppWithTimeout(pid: app.processIdentifier, timeout: 2.0)
+            windows.append(contentsOf: appWindows)
+        }
+        
+        return windows
+    }
+    
+    // MARK: - Fast Window Discovery (Optimized Performance)
+    func getAllWindowsFast() -> [WindowInfo] {
+        guard checkAccessibilityPermissions() else { 
+            return [] 
+        }
+        
+        let runningApps = NSWorkspace.shared.runningApplications
+        
+        // Aggressive filtering - only include apps likely to have manageable windows
+        let fastFilteredApps = runningApps.filter { app in
+            guard let bundleId = app.bundleIdentifier,
+                  app.activationPolicy == .regular else { return false }
+            
+            // Skip known problematic apps
+            let skipApps = [
+                "com.apple.dock", "com.apple.systemuiserver", "com.apple.windowserver",
+                "com.apple.loginwindow", "com.apple.ActivityMonitor", "com.docker.docker",
+                "com.apple.CoreSimulator.SimulatorTrampoline", "com.apple.screensaver.engine"
+            ]
+            
+            if skipApps.contains(bundleId) { return false }
+            
+            // Skip apps without localized names (likely system processes)
+            guard app.localizedName != nil else { return false }
+            
+            return true
+        }
+        
+        var windows: [WindowInfo] = []
+        var processedApps = 0
+        
+        // Process with aggressive timeout per app
+        for app in fastFilteredApps.prefix(15) { // Limit to 15 apps max
+            let appWindows = getWindowsForAppFast(pid: app.processIdentifier)
+            windows.append(contentsOf: appWindows)
+            processedApps += 1
+            
+            // Break early if we already have lots of windows
+            if windows.count > 50 {
+                break
             }
         }
         
         return windows
+    }
+    
+    func getWindowsForAppFast(pid: pid_t) -> [WindowInfo] {
+        guard checkAccessibilityPermissions() else { return [] }
+        
+        let appRef = AXUIElementCreateApplication(pid)
+        var windowsRef: CFTypeRef?
+        
+        // Very short timeout for getting windows list
+        let result = AXUIElementCopyAttributeValue(appRef, kAXWindowsAttribute as CFString, &windowsRef)
+        
+        if result != .success { return [] }
+        
+        guard let windows = windowsRef as? [AXUIElement] else { return [] }
+        
+        var windowInfos: [WindowInfo] = []
+        
+        // Process only first 10 windows per app to avoid hanging
+        for window in windows.prefix(10) {
+            if let windowInfo = createWindowInfoFast(from: window, appPID: pid) {
+                windowInfos.append(windowInfo)
+            }
+        }
+        
+        return windowInfos
+    }
+    
+    private func createWindowInfoFast(from window: AXUIElement, appPID: pid_t) -> WindowInfo? {
+        var titleRef: CFTypeRef?
+        var positionRef: CFTypeRef?
+        var sizeRef: CFTypeRef?
+        
+        // Get only essential properties, skip slow ones
+        _ = AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &titleRef)
+        let title = titleRef as? String ?? "Untitled"
+        
+        // Try to get position/size but don't wait long
+        AXUIElementCopyAttributeValue(window, kAXPositionAttribute as CFString, &positionRef)
+        var position = CGPoint.zero
+        if let positionValue = positionRef {
+            AXValueGetValue(positionValue as! AXValue, .cgPoint, &position)
+        }
+        
+        AXUIElementCopyAttributeValue(window, kAXSizeAttribute as CFString, &sizeRef)
+        var size = CGSize.zero
+        if let sizeValue = sizeRef {
+            AXValueGetValue(sizeValue as! AXValue, .cgSize, &size)
+        }
+        
+        // Cache app name lookup
+        let appName = NSRunningApplication(processIdentifier: appPID)?.localizedName ?? "Unknown App"
+        
+        let bounds = CGRect(origin: position, size: size)
+        
+        return WindowInfo(title: title, appName: appName, bounds: bounds, windowRef: window)
     }
     
     // MARK: - Async Parallel Window Discovery
@@ -79,6 +196,11 @@ class WindowManager {
         return NSWorkspace.shared.runningApplications.filter { app in
             guard let bundleId = app.bundleIdentifier,
                   let appName = app.localizedName else { return false }
+            
+            // Skip WindowAI itself to prevent recursion and performance issues
+            if bundleId == "com.zandermodaress.WindowAI" {
+                return false
+            }
             
             // Skip true system apps, but allow user-manageable Apple apps
             let allowedAppleApps = [
@@ -265,7 +387,43 @@ class WindowManager {
         return getWindowsForApp(pid: app.processIdentifier)
     }
     
-    private func getWindowsForApp(pid: pid_t) -> [WindowInfo] {
+    // MARK: - Timeout Wrapper for Per-App Window Discovery
+    func getWindowsForAppWithTimeout(pid: pid_t, timeout: TimeInterval) -> [WindowInfo] {
+        let startTime = CFAbsoluteTimeGetCurrent()
+        var result: [WindowInfo] = []
+        var completed = false
+        
+        let workQueue = DispatchQueue.global(qos: .userInitiated)
+        let timeoutQueue = DispatchQueue.global(qos: .utility)
+        
+        let group = DispatchGroup()
+        
+        // Start the actual work
+        group.enter()
+        workQueue.async {
+            defer { group.leave() }
+            if !completed {
+                result = self.getWindowsForApp(pid: pid)
+                completed = true
+            }
+        }
+        
+        // Start timeout timer
+        timeoutQueue.asyncAfter(deadline: .now() + timeout) {
+            if !completed {
+                completed = true
+                // Timeout occurred
+            }
+        }
+        
+        // Wait for completion or timeout
+        _ = group.wait(timeout: .now() + timeout + 0.1)
+        
+        
+        return result
+    }
+    
+    func getWindowsForApp(pid: pid_t) -> [WindowInfo] {
         guard checkAccessibilityPermissions() else { 
             return [] 
         }
@@ -502,7 +660,7 @@ class WindowManager {
     /// Arrange workspace with smooth transitions
     func arrangeWorkspaceAnimated(_ windows: [WindowInfo], layout: [(CGRect)], completion: (() -> Void)? = nil) {
         guard windows.count == layout.count else {
-            print("❌ Window count doesn't match layout count")
+            // Window count doesn't match layout count
             completion?()
             return
         }
@@ -518,19 +676,11 @@ class WindowManager {
     // MARK: - Window Manipulation
     func moveWindow(_ windowInfo: WindowInfo, to position: CGPoint) -> Bool {
         guard checkAccessibilityPermissions() else { 
-            print("❌ moveWindow: No accessibility permissions")
             return false 
         }
         
-        print("🚀 moveWindow: Moving '\(windowInfo.title)' to position \(position)")
         let positionValue = AXValueCreate(.cgPoint, withUnsafePointer(to: position) { $0 })
         let result = AXUIElementSetAttributeValue(windowInfo.windowRef, kAXPositionAttribute as CFString, positionValue!)
-        
-        if result == .success {
-            print("✅ moveWindow: Successfully moved window")
-        } else {
-            print("❌ moveWindow: Failed with error code: \(result.rawValue)")
-        }
         
         return result == .success
     }
@@ -552,20 +702,11 @@ class WindowManager {
         // Validate bounds against app constraints and screen bounds (unless disabled)
         let finalBounds = validate ? validateWindowBounds(bounds, for: windowInfo.appName) : bounds
         
-        if bounds != finalBounds {
-            print("    ⚠️ Bounds were adjusted from \(bounds) to \(finalBounds)")
-        }
-        
         let positionValue = AXValueCreate(.cgPoint, withUnsafePointer(to: finalBounds.origin) { $0 })
         let sizeValue = AXValueCreate(.cgSize, withUnsafePointer(to: finalBounds.size) { $0 })
         
-        print("    📍 Setting position to: \(finalBounds.origin) for \(windowInfo.appName)")
         let positionResult = AXUIElementSetAttributeValue(windowInfo.windowRef, kAXPositionAttribute as CFString, positionValue!)
-        print("    🎯 Position result: \(positionResult == .success ? "✅ Success" : "❌ Failed with error \(positionResult.rawValue)")")
-        
-        print("    📐 Setting size to: \(finalBounds.size) for \(windowInfo.appName)")
         let sizeResult = AXUIElementSetAttributeValue(windowInfo.windowRef, kAXSizeAttribute as CFString, sizeValue!)
-        print("    🎯 Size result: \(sizeResult == .success ? "✅ Success" : "❌ Failed with error \(sizeResult.rawValue)")")
         
         return positionResult == .success && sizeResult == .success
     }
@@ -614,12 +755,8 @@ class WindowManager {
         let result = AXUIElementCopyAttributeValue(windowInfo.windowRef, kAXZoomButtonAttribute as CFString, &zoomButton)
         
         if result == .success, let button = zoomButton as! AXUIElement? {
-            print("    🟢 Found zoom button, attempting to click...")
             let clickResult = AXUIElementPerformAction(button, kAXPressAction as CFString)
-            print("    🎯 Zoom button click result: \(clickResult == .success ? "✅ Success" : "❌ Failed with error \(clickResult.rawValue)")")
             return clickResult == .success
-        } else {
-            print("    ❌ Could not find zoom button (error: \(result.rawValue))")
         }
         
         return false
@@ -646,10 +783,6 @@ class WindowManager {
         let fullFrame = screen.frame
         let visibleFrame = screen.visibleFrame
         
-        print("  📱 Screen info:")
-        print("    Full frame: \(fullFrame)")
-        print("    Visible frame: \(visibleFrame)")
-        
         // Calculate the actual maximize bounds
         // The visible frame should already exclude menu bar and dock, but let's be explicit
         let maximizeBounds = CGRect(
@@ -659,21 +792,15 @@ class WindowManager {
             height: visibleFrame.height
         )
         
-        print("  🎯 Maximize bounds: \(maximizeBounds)")
-        
         // Try setting position and size separately for better compatibility
         let positionValue = AXValueCreate(.cgPoint, withUnsafePointer(to: maximizeBounds.origin) { $0 })
         let sizeValue = AXValueCreate(.cgSize, withUnsafePointer(to: maximizeBounds.size) { $0 })
         
         // First set the position
-        print("  📍 Setting position to: \(maximizeBounds.origin) for \(windowInfo.appName)")
         let posResult = AXUIElementSetAttributeValue(windowInfo.windowRef, kAXPositionAttribute as CFString, positionValue!)
-        print("    Position result: \(posResult == .success ? "✅" : "❌ \(posResult.rawValue)")")
         
         // Then set the size
-        print("  📐 Setting size to: \(maximizeBounds.size) for \(windowInfo.appName)")
         let sizeResult = AXUIElementSetAttributeValue(windowInfo.windowRef, kAXSizeAttribute as CFString, sizeValue!)
-        print("    Size result: \(sizeResult == .success ? "✅" : "❌ \(sizeResult.rawValue)")")
         
         // Verify the final bounds
         if posResult == .success && sizeResult == .success {
@@ -696,13 +823,7 @@ class WindowManager {
                     AXValueGetValue(sizeVal as! AXValue, .cgSize, &finalSize)
                 }
                 
-                print("  📊 Actual final bounds: origin=\(finalOrigin), size=\(finalSize)")
-                
-                if finalOrigin != maximizeBounds.origin || finalSize != maximizeBounds.size {
-                    print("  ⚠️ Window didn't reach requested bounds!")
-                    print("    Requested: \(maximizeBounds)")
-                    print("    Actual: \(CGRect(origin: finalOrigin, size: finalSize))")
-                }
+                // Window bounds updated
             }
         }
         
@@ -750,18 +871,13 @@ class WindowManager {
     func restoreWindow(_ windowInfo: WindowInfo) -> Bool {
         guard checkAccessibilityPermissions() else { return false }
         
-        print("🔄 Restoring window: '\(windowInfo.title)'")
-        
         // Check if window is minimized
         var isMinimized: CFTypeRef?
         let minResult = AXUIElementCopyAttributeValue(windowInfo.windowRef, kAXMinimizedAttribute as CFString, &isMinimized)
         
         if minResult == .success, let minimized = isMinimized as? Bool, minimized {
-            print("  Window is minimized, restoring...")
-            
             // Step 1: Unminimize the window
             let restoreResult = AXUIElementSetAttributeValue(windowInfo.windowRef, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
-            print("  Restore API result: \(restoreResult == .success ? "✅" : "❌")")
             
             if restoreResult != .success {
                 return false
@@ -770,15 +886,12 @@ class WindowManager {
             // Step 2: Activate the app (critical for visibility)
             if let bundleID = getBundleID(for: windowInfo.appName),
                let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first {
-                print("  🎯 Activating \(windowInfo.appName)...")
                 app.activate()
                 Thread.sleep(forTimeInterval: 0.2)
             }
             
             // Step 3: Focus/raise the window
-            print("  🎯 Focusing restored window...")
             let focusResult = AXUIElementPerformAction(windowInfo.windowRef, kAXRaiseAction as CFString)
-            print("  Focus result: \(focusResult == .success ? "✅" : "❌")")
             
             // Step 4: Verify the window is actually restored
             var verifyMinimized: CFTypeRef?
@@ -786,15 +899,12 @@ class WindowManager {
             let stillMinimized = (verifyResult == .success && (verifyMinimized as? Bool) == true)
             
             if stillMinimized {
-                print("  ❌ Window still appears minimized after restore")
                 return false
             }
             
-            print("  ✅ Window successfully restored and should be visible")
             return true
         }
         
-        print("  Window not minimized, bringing to front...")
         // If not minimized, bring it to front
         return focusWindow(windowInfo)
     }
@@ -909,6 +1019,46 @@ struct DisplayInfo {
     let visibleFrame: CGRect
     let isMain: Bool
     let backingScaleFactor: CGFloat
+}
+
+// MARK: - Performance Testing Utilities
+extension WindowManager {
+    /// Compare performance between different window discovery methods
+    func performanceTest() {
+        // Test 1: Standard getAllWindows() with timing
+        let standardWindows = getAllWindows()
+        
+        // Test 2: Fast getAllWindows()
+        let fastWindows = getAllWindowsFast()
+        
+        // Test 3: Async version
+        Task {
+            let asyncStartTime = CFAbsoluteTimeGetCurrent()
+            let asyncWindows = await getAllWindowsAsync()
+            let asyncTime = CFAbsoluteTimeGetCurrent() - asyncStartTime
+        }
+        
+        // App breakdown
+        let standardApps = Set(standardWindows.map { $0.appName })
+        let fastApps = Set(fastWindows.map { $0.appName })
+        
+        // Missing apps
+        let missingInFast = standardApps.subtracting(fastApps)
+        let extraInFast = fastApps.subtracting(standardApps)
+    }
+    
+    /// Test specific app performance
+    func testAppPerformance(appName: String) {
+        guard let app = NSWorkspace.shared.runningApplications.first(where: { 
+            $0.localizedName?.lowercased() == appName.lowercased() 
+        }) else {
+            return
+        }
+        
+        let startTime = CFAbsoluteTimeGetCurrent()
+        let windows = getWindowsForApp(pid: app.processIdentifier)
+        let elapsedTime = CFAbsoluteTimeGetCurrent() - startTime
+    }
 }
 
 // MARK: - Helper Extensions

@@ -39,6 +39,18 @@ class WindowAIController: HotkeyManagerDelegate, LLMServiceDelegate {
         // Test LLM integration (disabled until permissions are working)
         // testLLMIntegration()
         
+        // DEVELOPMENT: Run Finder detection tests and performance tests
+        #if DEBUG
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            FinderDetection.runTests()
+        }
+        
+        // CRITICAL: Run performance tests to ensure <0.1s requirement
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+            XRayWindowManager.shared.runPerformanceTests()
+        }
+        #endif
+        
         // DEVELOPMENT: Uncomment to run minimal Gemini test automatically
         // DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
         //     Task {
@@ -431,6 +443,13 @@ class WindowAIController: HotkeyManagerDelegate, LLMServiceDelegate {
         for (command, result) in zip(commands, results) {
             analyticsService.trackCommandExecuted(command, success: result.success, duration: duration)
         }
+        
+        // Show X-Ray overlay after successful multi-window arrangements
+        let successfulCommands = results.filter { $0.success }.count
+        if successfulCommands > 1 {
+            print("🔍 Showing post-arrangement X-Ray preview for \(successfulCommands) successful operations")
+            XRayWindowManager.shared.showPostArrangementOverlay(delay: 1.5)
+        }
     }
     
     // MARK: - Notification Handlers
@@ -462,6 +481,25 @@ extension WindowAIController {
                 self.hideAllOtherCommandWindows()
                 self.commandWindow.showWindow()
             }
+        }
+    }
+    
+    func xrayOverlayRequested() {
+        print("🔍 X-Ray overlay requested via double-tap Command key")
+        
+        DispatchQueue.main.async {
+            // Hide command window if visible
+            if self.commandWindow.isVisible {
+                self.commandWindow.hideWindow()
+            }
+            
+            // DEVELOPMENT: Debug Finder windows before showing overlay
+            #if DEBUG
+            XRayWindowManager.shared.debugFinderWindows()
+            #endif
+            
+            // Toggle X-Ray overlay
+            XRayWindowManager.shared.toggleXRayOverlay()
         }
     }
 }
