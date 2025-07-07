@@ -37,6 +37,12 @@ struct FinderDetection {
         }
     }
     
+    /// Cached screen dimensions for performance
+    private static var cachedScreenArea: CGFloat = {
+        guard let screen = NSScreen.main else { return 2073600 } // Default to 1920x1080
+        return screen.frame.width * screen.frame.height
+    }()
+    
     /// Fast version: Simple heuristic for X-Ray overlay performance
     /// Returns true if window should be shown, false if it should be hidden
     static func shouldShowFinderWindowFast(_ window: WindowInfo) -> Bool {
@@ -57,13 +63,10 @@ struct FinderDetection {
             return false
         }
         
-        // 3. Hide if window covers most of screen (likely desktop)
-        if let screen = NSScreen.main {
-            let screenArea = screen.frame.width * screen.frame.height
-            let windowArea = window.bounds.width * window.bounds.height
-            if (windowArea / screenArea) > 0.8 {
-                return false
-            }
+        // 3. Hide if window covers most of screen (likely desktop) - using cached screen size
+        let windowArea = window.bounds.width * window.bounds.height
+        if (windowArea / cachedScreenArea) > 0.8 {
+            return false
         }
         
         // Otherwise, show the window
