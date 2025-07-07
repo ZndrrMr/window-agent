@@ -1079,14 +1079,37 @@ extension WindowManager {
     func isWindowVisible(_ windowInfo: WindowInfo) -> Bool {
         guard checkAccessibilityPermissions() else { return false }
         
-        var isMinimized: CFTypeRef?
-        let result = AXUIElementCopyAttributeValue(windowInfo.windowRef, kAXMinimizedAttribute as CFString, &isMinimized)
+        // Add timeout protection to prevent hanging on slow apps
+        return withTimeout(0.05) { // 50ms max per window
+            var isMinimized: CFTypeRef?
+            let result = AXUIElementCopyAttributeValue(windowInfo.windowRef, kAXMinimizedAttribute as CFString, &isMinimized)
+            
+            if result == .success, let minimized = isMinimized as? Bool {
+                return !minimized
+            }
+            
+            return true // Assume visible if we can't determine
+        } ?? true // Default to visible on timeout
+    }
+    
+    /// Timeout wrapper for Accessibility API calls to prevent hanging
+    private func withTimeout<T>(_ timeout: TimeInterval, operation: @escaping () -> T) -> T? {
+        var result: T?
+        let semaphore = DispatchSemaphore(value: 0)
         
-        if result == .success, let minimized = isMinimized as? Bool {
-            return !minimized
+        DispatchQueue.global(qos: .userInitiated).async {
+            result = operation()
+            semaphore.signal()
         }
         
-        return true // Assume visible if we can't determine
+        let timeoutResult = semaphore.wait(timeout: .now() + timeout)
+        
+        if timeoutResult == .timedOut {
+            // Operation timed out - return nil to indicate failure
+            return nil
+        }
+        
+        return result
     }
     
     func isWindowVisibleAsync(_ windowInfo: WindowInfo) async -> Bool {

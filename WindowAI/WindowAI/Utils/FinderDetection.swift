@@ -37,6 +37,40 @@ struct FinderDetection {
         }
     }
     
+    /// Fast version: Simple heuristic for X-Ray overlay performance
+    /// Returns true if window should be shown, false if it should be hidden
+    static func shouldShowFinderWindowFast(_ window: WindowInfo) -> Bool {
+        // Only apply this logic to Finder
+        guard window.appName.lowercased().contains("finder") else {
+            return true // Not Finder, show normally
+        }
+        
+        // Simple heuristics for performance:
+        // 1. Hide if window has empty/generic title
+        let title = window.title.lowercased()
+        if title.isEmpty || title == "untitled" || title == "desktop" || title == "finder" {
+            return false
+        }
+        
+        // 2. Hide if window is very small (likely not meaningful)
+        if window.bounds.width < 200 || window.bounds.height < 150 {
+            return false
+        }
+        
+        // 3. Hide if window covers most of screen (likely desktop)
+        if let screen = NSScreen.main {
+            let screenArea = screen.frame.width * screen.frame.height
+            let windowArea = window.bounds.width * window.bounds.height
+            if (windowArea / screenArea) > 0.8 {
+                return false
+            }
+        }
+        
+        // Otherwise, show the window
+        return true
+    }
+    
+    /// Original comprehensive version (kept for compatibility)
     /// Determines if a Finder window should be shown in X-Ray overlay
     /// Returns true if the window appears to be user-positioned, false if it's in default position
     static func shouldShowFinderWindow(_ window: WindowInfo) -> Bool {

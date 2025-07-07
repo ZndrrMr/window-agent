@@ -738,7 +738,7 @@ Claude Code is granted MAXIMUM permissions for this project:
 - ✅ **Advanced hotkey system**: ⌘+Shift+Space, ⌘+Shift+X, double-tap Command
 - ✅ **Sophisticated app autocomplete**: 4-component system with token-based UI
 - ✅ **Advanced positioning**: Flexible coordinates with layer control and focus management
-- ✅ **X-Ray overlay system**: Complete visualization with sub-0.1s performance (MAJOR FEATURE)
+- ⚠️ **X-Ray overlay system**: Basic implementation exists but needs major fixes - currently takes ~10s to display and looks terrible
 - ✅ **Animation framework**: 6-file system with queue management and context-aware selection
 - ✅ **Learning system**: Statistical preference tracking with UserPreferenceTracker
 - ✅ **Performance optimization**: Parallel async operations, smart filtering, CATransaction optimization
@@ -910,10 +910,10 @@ flexible_position(
 - **Status**: Complete implementation with layer control and focus management
 - **Features**: Percentage/pixel coordinates, z-index layering, bounds validation
 
-#### **XRayWindowManager.swift** ✅ **Major Feature Addition**
+#### **XRayWindowManager.swift** ⚠️ **Major Feature - Needs Performance Fixes**
 - **Purpose**: X-Ray overlay system coordination
-- **Status**: Complete implementation with sub-0.1s performance requirement
-- **Features**: Ultra-fast window discovery, smart Finder filtering, performance testing
+- **Status**: Basic implementation exists but fails performance requirements (currently ~10s, not sub-0.1s)
+- **Issues**: Expensive window visibility checks, costly Finder detection, multiple slow gathering methods
 
 #### **Animation System** ✅ **6-File Framework**
 - **Files**: AnimationPresets, AnimationQueue, AnimationSelector, WindowAnimator, etc.
@@ -969,11 +969,11 @@ flexible_position(
 
 ### **UI LAYER - ADVANCED INTERFACE**
 
-#### **XRayOverlayWindow.swift** ✅ **Major Feature - Glass Overlay**
+#### **XRayOverlayWindow.swift** ⚠️ **Major Feature - Needs Visual Refinement & Performance Fixes**
 - **Purpose**: X-Ray window visualization with glass effects
-- **Status**: Complete implementation with optimized and standard rendering modes
-- **Features**: Window outlines, number labels, keyboard selection, CATransaction optimization
-- **Performance**: Sub-0.1s requirement with comprehensive performance testing
+- **Status**: Basic implementation exists but needs visual refinement and has performance issues
+- **Issues**: Visual design needs refinement/polish, expensive blur filters cause performance problems
+- **Performance**: Currently fails sub-0.1s requirement due to expensive visual effects
 
 #### **SmartCommandTextField.swift + Autocomplete System** ✅ **4-Component System**
 - **Files**: AppAutocomplete.swift, AppTokenView.swift, AutocompleteDropdown.swift, AutocompleteWindow.swift
@@ -983,10 +983,10 @@ flexible_position(
 
 ### **UTILS LAYER - SMART FILTERING**
 
-#### **FinderDetection.swift** ✅ **Smart Finder Filtering**
+#### **FinderDetection.swift** ⚠️ **Smart Finder Filtering - Performance Issues**
 - **Purpose**: Intelligent Finder window filtering to prevent desktop clutter
-- **Status**: Complete implementation with 4-test heuristic system
-- **Features**: Position analysis, content detection, timing validation, desktop window exclusion
+- **Status**: Implementation exists but 4-test heuristic system is too expensive for real-time use
+- **Issues**: Complex calculations (area analysis, date lookups, string processing) run for every Finder window causing delays
 
 ### **TESTING LAYER - COMPREHENSIVE INFRASTRUCTURE**
 
@@ -997,11 +997,17 @@ flexible_position(
 
 ### **IMPLEMENTATION GAPS (Updated)**
 
+#### **CRITICAL X-Ray System Fixes Needed (Top Priority):**
+1. 🚨 **X-Ray performance**: Currently takes ~10s to display (should be <0.1s) - expensive window visibility checks
+2. 🚨 **X-Ray visual quality**: Needs visual design refinement and polish
+3. 🚨 **Window discovery optimization**: Remove expensive `isWindowVisible()` calls and Finder detection cascade
+4. 🚨 **Performance optimization**: Replace expensive blur filters with optimized rendering (performance fix, not visual)
+
 #### Remaining Phase 3 Gaps:
-1. ⚠️ **Workspace layout execution** in CommandExecutor (methods are stubs)
-2. ⚠️ **User feedback UI** for learning system corrections
-3. ⚠️ **Settings persistence** (UserDefaults integration)
-4. ⚠️ **Command history** implementation
+5. ⚠️ **Workspace layout execution** in CommandExecutor (methods are stubs)
+6. ⚠️ **User feedback UI** for learning system corrections
+7. ⚠️ **Settings persistence** (UserDefaults integration)
+8. ⚠️ **Command history** implementation
 
 #### Phase 5 Distribution Gaps:
 1. ⚠️ **Code signing and notarization** workflow
@@ -1277,23 +1283,29 @@ class FinderDetection {
 }
 ```
 
-### Performance Architecture
+### Performance Architecture - ⚠️ **NEEDS MAJOR FIXES**
 
-#### **Multi-Level Optimization**
-1. **Ultra-Fast Window Discovery**: Parallel async operations with timeout protection
-2. **Smart App Filtering**: Skip problematic apps, exclude WindowAI itself
-3. **CATransaction Optimization**: Instant rendering with disabled animations
-4. **Memory Management**: Proper cleanup and reference handling
+#### **Current Performance Issues**
+1. **Slow Window Discovery**: Still calls expensive `WindowManager.shared.isWindowVisible(window)` for every window (~10s delay)
+2. **Costly Finder Detection**: 4-test heuristic system runs complex calculations for every Finder window
+3. **Expensive Visual Effects**: Screen-wide blur filters cause performance delays (not visual quality issues)
+4. **Method Confusion**: Multiple "optimized" methods that still call expensive operations
 
-#### **Performance Testing Framework**
+#### **Performance Testing Framework - Currently Failing**
 ```swift
-// Comprehensive performance validation
+// Performance tests show actual results:
 XRayWindowManager.shared.runPerformanceTests()
 
-// Expected output:
-// ⚡️ XRay Show Performance: 0.087s (PASS - under 0.1s requirement)
-// ⚡️ XRay Hide Performance: 0.012s (PASS - under 0.1s requirement)
+// Current reality:
+// ⚡️ XRay Show Performance: ~10.0s (FAIL - supposed to be under 0.1s)
+// ⚡️ XRay Hide Performance: ~0.5s (FAIL - expensive cleanup)
 ```
+
+#### **Root Causes of Poor Performance**
+- Window visibility checks make expensive Accessibility API calls
+- Finder detection cascade with area calculations and string processing
+- Visual blur effects applied to entire screen (performance issue, not visual quality issue)
+- Async overhead in task groups for window filtering
 
 ### User Experience
 

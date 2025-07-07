@@ -32,19 +32,31 @@ class XRayWindowManager {
     
     // MARK: - Public Interface
     
-    /// Show the X-Ray overlay with all visible windows - INSTANT NO-CACHE
+    /// Show the X-Ray overlay with all visible windows - PARALLEL PROCESSING
     func showXRayOverlay() {
         guard !isOverlayVisible else { return }
         
+        // Use async parallel processing for maximum performance
+        Task {
+            await showXRayOverlayAsync()
+        }
+    }
+    
+    /// Async version with parallel window discovery using TaskGroup
+    private func showXRayOverlayAsync() async {
         let startTime = Date()
         
-        // OPTIMIZED VERSION - Use fastest method with fallback diagnostics
-        let visibleWindows = getVisibleWindowsUltraFast()
-        displayOverlayWithWindows(visibleWindows)
+        // Use parallel TaskGroup implementation for maximum performance
+        let visibleWindows = await getVisibleWindowsAsync()
+        
+        // Display on main thread
+        await MainActor.run {
+            displayOverlayWithWindows(visibleWindows)
+        }
         
         let duration = Date().timeIntervalSince(startTime)
         
-        // Performance test
+        // Performance test - fallback to diagnostics if still slow
         if duration > 0.1 {
             // Run diagnostic version for debugging
             _ = getVisibleWindowsFastWithDiagnostics()
@@ -546,15 +558,54 @@ class XRayWindowManager {
             window.bounds.height > 50
         }
         
+        // ULTRA-FAST MODE: Skip expensive AX visibility checks for X-Ray overlay
+        // Use position-based heuristics instead of slow Accessibility API calls
+        let visibleWindows = candidateWindows.compactMap { window -> WindowInfo? in
+            // Position-based visibility heuristic (instant)
+            guard window.bounds.origin.x > -5000 && window.bounds.origin.y > -5000 else {
+                return nil // Obviously hidden/minimized
+            }
+            
+            // Fast Finder filtering for performance
+            if !FinderDetection.shouldShowFinderWindowFast(window) {
+                return nil
+            }
+            
+            return window
+        }
         
-        // Parallel visibility checks (this is what was slow)
+        // Clean up old Finder tracking data periodically
+        FinderDetection.cleanupOldTrackingData()
+        
+        let duration = Date().timeIntervalSince(startTime)
+        
+        return visibleWindows
+    }
+    
+    /// Fallback: Parallel visibility checks (more accurate but slower)
+    private func getVisibleWindowsWithAccurateChecks() async -> [WindowInfo] {
+        let startTime = Date()
+        
+        // Get all windows first (fast)
+        let allWindows = WindowManager.shared.getAllWindows()
+        
+        // Pre-filter obvious exclusions (instant)
+        let candidateWindows = allWindows.filter { window in
+            !window.appName.contains("WindowAI") &&
+            !window.appName.contains("Dock") &&
+            !window.appName.contains("SystemUIServer") &&
+            window.bounds.width > 50 &&
+            window.bounds.height > 50
+        }
+        
+        // Parallel visibility checks (more accurate but slower)
         let visibleWindows = await withTaskGroup(of: WindowInfo?.self, returning: [WindowInfo].self) { group in
             for window in candidateWindows {
                 group.addTask {
                     let isVisible = await WindowManager.shared.isWindowVisibleAsync(window)
                     
-                    // Additional check: Smart Finder filtering
-                    if isVisible && !FinderDetection.shouldShowFinderWindow(window) {
+                    // Additional check: Fast Finder filtering for performance
+                    if isVisible && !FinderDetection.shouldShowFinderWindowFast(window) {
                         return nil
                     }
                     
@@ -570,9 +621,6 @@ class XRayWindowManager {
             }
             return results
         }
-        
-        // Clean up old Finder tracking data periodically
-        FinderDetection.cleanupOldTrackingData()
         
         let duration = Date().timeIntervalSince(startTime)
         
@@ -673,7 +721,7 @@ class XRayWindowManager {
         
         for (index, window) in finderWindows.enumerated() {
             
-            let shouldShow = FinderDetection.shouldShowFinderWindow(window)
+            let shouldShow = FinderDetection.shouldShowFinderWindowFast(window)
         }
         
         let stats = FinderDetection.getTrackingStats()
@@ -918,7 +966,7 @@ extension XRayWindowManager {
         if !finderWindows.isEmpty {
             let startFinder = Date()
             for window in finderWindows {
-                let _ = FinderDetection.shouldShowFinderWindow(window)
+                let _ = FinderDetection.shouldShowFinderWindowFast(window)
             }
             finderDuration = Date().timeIntervalSince(startFinder)
             finderPassed = finderDuration < 0.1
