@@ -558,15 +558,21 @@ class XRayWindowManager {
             window.bounds.height > 50
         }
         
-        // ULTRA-FAST MODE: Skip expensive AX visibility checks for X-Ray overlay
-        // Use position-based heuristics instead of slow Accessibility API calls
+        // HYBRID MODE: Fast position checks + minimization detection
+        // Use position heuristics AND fast minimization checks (with timeout protection)
         let visibleWindows = candidateWindows.compactMap { window -> WindowInfo? in
-            // Position-based visibility heuristic (instant)
+            // 1. Position-based visibility heuristic (instant)
             guard window.bounds.origin.x > -5000 && window.bounds.origin.y > -5000 else {
-                return nil // Obviously hidden/minimized
+                return nil // Obviously hidden/off-screen
             }
             
-            // Fast Finder filtering for performance
+            // 2. Fast minimization check with timeout (50ms max per window)
+            let isVisible = WindowManager.shared.isWindowVisible(window)
+            guard isVisible else {
+                return nil // Minimized window - exclude from X-Ray
+            }
+            
+            // 3. Fast Finder filtering for performance
             if !FinderDetection.shouldShowFinderWindowFast(window) {
                 return nil
             }

@@ -438,7 +438,7 @@ Preparation for public release (not yet started).
 7. **Run tests and verify they FAIL** (red phase)
 8. **Commit failing tests** to git with "TDD red phase" message
 9. **Implement minimal code** to make tests pass (green phase)
-10. **Run tests until 100% pass rate** - never stop iterating
+10. **Run tests until 100% pass rate** - never stop iterating and do not commit anything until all tests pass
 11. **Commit working implementation** with "TDD green phase - ALL TESTS PASS"
 12. **Optional refactoring** while keeping all tests green
 
