@@ -444,11 +444,11 @@ class WindowAIController: HotkeyManagerDelegate, LLMServiceDelegate {
             analyticsService.trackCommandExecuted(command, success: result.success, duration: duration)
         }
         
-        // Show X-Ray overlay after successful multi-window arrangements
+        // Track analytics for successful commands
         let successfulCommands = results.filter { $0.success }.count
         if successfulCommands > 1 {
-            print("🔍 Showing post-arrangement X-Ray preview for \(successfulCommands) successful operations")
-            XRayWindowManager.shared.showPostArrangementOverlay(delay: 1.5)
+            print("✅ Completed \(successfulCommands) successful window operations")
+            // Note: X-Ray overlay removed - only triggered by hotkey now
         }
     }
     

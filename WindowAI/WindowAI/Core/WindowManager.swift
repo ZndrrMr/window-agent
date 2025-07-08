@@ -1014,6 +1014,19 @@ class WindowManager {
             return displayBounds.contains(windowCenter)
         }
     }
+    
+    /// Get display bounds for a specific display index
+    func getDisplayBounds(at index: Int) -> CGRect? {
+        guard index >= 0 && index < NSScreen.screens.count else {
+            return nil
+        }
+        return NSScreen.screens[index].visibleFrame
+    }
+    
+    /// Get all display bounds in order
+    func getAllDisplayBounds() -> [CGRect] {
+        return NSScreen.screens.map { $0.visibleFrame }
+    }
 }
 
 // MARK: - Display Info Structure

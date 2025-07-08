@@ -400,6 +400,64 @@ class GeminiLLMService {
         - Common phrases: "external monitor" → display 1, "laptop screen" → display 0
         - Preserve display when resizing, only move when explicitly requested
         
+        DISPLAY-AWARE POSITIONING STRATEGIES:
+        Adapt your positioning approach based on display characteristics:
+        
+        **Small Displays (≤1920x1080):**
+        - Use more aggressive cascading (60-70% overlap)
+        - Prefer narrower windows (30-40% width for supporting apps)
+        - Tighter cascade offsets (20-30px)
+        - Focus on essential apps only (2-3 windows max)
+        - Example: "i want to code" → Terminal (25% width), Cursor (75% width with 50% overlap)
+        
+        **Medium Displays (1920x1080 to 2560x1440):**
+        - Balanced cascading (40-50% overlap)
+        - Standard window widths (35-45% for supporting apps)
+        - Medium cascade offsets (40-60px)
+        - Support 3-4 windows comfortably
+        - Example: "i want to code" → Terminal (35% width), Cursor (65% width with 40% overlap), Arc (50% width peek)
+        
+        **Large Displays (≥2560x1440):**
+        - Minimal cascading (20-30% overlap)
+        - Wider windows (40-60% width for supporting apps)
+        - Generous cascade offsets (60-100px)
+        - Support 4+ windows with breathing room
+        - Example: "i want to code" → Terminal (30% width), Cursor (70% width with 25% overlap), Arc (55% width peek), Spotify (25% width corner)
+        
+        **Ultra-wide Displays (≥3440x1440):**
+        - Side-by-side arrangements preferred over cascading
+        - Multiple primary zones (left 40%, center 40%, right 20%)
+        - Minimal overlaps except for glanceable monitors
+        - Support 5+ windows in distinct zones
+        - Example: "i want to code" → Terminal (left 30%), Cursor (center 50%), Arc (right 20%), Spotify (corner 15%)
+        
+        **Multi-Display Strategies:**
+        - Primary workspace on main display (Display 0)
+        - Secondary tools on external displays (Display 1+)
+        - Context-aware distribution:
+          - Coding: Main IDE on primary, Terminal/docs on secondary
+          - Research: Browser on primary, notes on secondary
+          - Design: Canvas on primary, tools/references on secondary
+        - Preserve focus on primary display for main tasks
+        
+        **Display Context Examples:**
+        ```
+        // Small display optimization
+        flexible_position(app_name: "Cursor", x_position: "0", y_position: "0", width: "70", height: "100", layer: "3", focus: "true")
+        flexible_position(app_name: "Terminal", x_position: "70", y_position: "0", width: "30", height: "100", layer: "2")
+        
+        // Large display optimization
+        flexible_position(app_name: "Cursor", x_position: "0", y_position: "0", width: "55", height: "100", layer: "3", focus: "true")
+        flexible_position(app_name: "Terminal", x_position: "55", y_position: "0", width: "25", height: "100", layer: "2")
+        flexible_position(app_name: "Arc", x_position: "35", y_position: "15", width: "45", height: "70", layer: "1")
+        flexible_position(app_name: "Spotify", x_position: "80", y_position: "80", width: "20", height: "20", layer: "0")
+        
+        // Multi-display distribution
+        flexible_position(app_name: "Cursor", x_position: "0", y_position: "0", width: "100", height: "100", layer: "3", focus: "true", display: "0")
+        flexible_position(app_name: "Terminal", x_position: "0", y_position: "0", width: "50", height: "100", layer: "2", display: "1")
+        flexible_position(app_name: "Arc", x_position: "50", y_position: "0", width: "50", height: "100", layer: "1", display: "1")
+        ```
+        
         CASCADE ARRANGEMENT STRATEGY:
         When arranging multiple windows, use archetype-based positioning:
         
@@ -584,26 +642,47 @@ class GeminiLLMService {
             prompt += "\n\nCURRENT SYSTEM STATE:\n"
             prompt += "Running apps: \(context.runningApps.joined(separator: ", "))\n"
             
-            // Display configuration
+            // Display configuration with optimization hints
             prompt += "\nDISPLAY CONFIGURATION:\n"
             for (index, resolution) in context.screenResolutions.enumerated() {
                 let isMain = index == 0
-                prompt += "Display \(index): \(Int(resolution.width))x\(Int(resolution.height))\(isMain ? " (Main)" : "")\n"
+                let width = Int(resolution.width)
+                let height = Int(resolution.height)
+                
+                // Add display-specific optimization hints
+                var displayHint = ""
+                if width <= 1920 && height <= 1080 {
+                    displayHint = " → Small display: use aggressive cascading (60-70% overlap), narrow windows (30-40% width)"
+                } else if width <= 2560 && height <= 1440 {
+                    displayHint = " → Medium display: balanced cascading (40-50% overlap), standard windows (35-45% width)"
+                } else if width >= 3440 && height <= 1600 {
+                    displayHint = " → Ultra-wide display: prefer side-by-side arrangements, minimal overlaps"
+                } else {
+                    displayHint = " → Large display: minimal cascading (20-30% overlap), wider windows (40-60% width)"
+                }
+                
+                prompt += "Display \(index): \(width)x\(height)\(isMain ? " (Main)" : "")\(displayHint)\n"
             }
             
             // DETAILED WINDOW LAYOUT ANALYSIS
             if !context.visibleWindows.isEmpty {
                 prompt += "\nCURRENT WINDOW LAYOUT:\n"
-                let mainDisplay = context.screenResolutions.first ?? CGSize(width: 1440, height: 900)
                 
                 for window in context.visibleWindows {
                     let bounds = window.bounds
-                    let widthPercent = (bounds.width / mainDisplay.width) * 100
-                    let heightPercent = (bounds.height / mainDisplay.height) * 100
-                    let xPercent = (bounds.origin.x / mainDisplay.width) * 100
-                    let yPercent = (bounds.origin.y / mainDisplay.height) * 100
+                    let displayIndex = window.displayIndex
                     
-                    prompt += "- \(window.appName): position (\(String(format: "%.0f", xPercent))%, \(String(format: "%.0f", yPercent))%) size \(String(format: "%.0f", widthPercent))%w × \(String(format: "%.0f", heightPercent))%h"
+                    // Use the correct display for percentage calculations
+                    let displayResolution = (displayIndex >= 0 && displayIndex < context.screenResolutions.count) 
+                        ? context.screenResolutions[displayIndex] 
+                        : (context.screenResolutions.first ?? CGSize(width: 1440, height: 900))
+                    
+                    let widthPercent = (bounds.width / displayResolution.width) * 100
+                    let heightPercent = (bounds.height / displayResolution.height) * 100
+                    let xPercent = (bounds.origin.x / displayResolution.width) * 100
+                    let yPercent = (bounds.origin.y / displayResolution.height) * 100
+                    
+                    prompt += "- \(window.appName): position (\(String(format: "%.0f", xPercent))%, \(String(format: "%.0f", yPercent))%) size \(String(format: "%.0f", widthPercent))%w × \(String(format: "%.0f", heightPercent))%h on Display \(displayIndex)"
                     
                     if window.isMinimized {
                         prompt += " [MINIMIZED]"
@@ -638,7 +717,9 @@ class GeminiLLMService {
                     }
                 }
                 
-                let screenArea = mainDisplay.width * mainDisplay.height
+                // Use main display for layout analysis
+                let mainDisplayResolution = context.screenResolutions.first ?? CGSize(width: 1440, height: 900)
+                let screenArea = mainDisplayResolution.width * mainDisplayResolution.height
                 let coveragePercent = min((totalCoverage / screenArea) * 100, 100)
                 
                 prompt += "- Screen coverage: \(String(format: "%.0f", coveragePercent))%\n"
@@ -657,12 +738,12 @@ class GeminiLLMService {
                         prompt += "- INEFFICIENCY: Poor screen utilization (\(String(format: "%.0f", coveragePercent))% coverage)\n"
                     }
                     
-                    if avgWidth < mainDisplay.width * 0.3 {
-                        prompt += "- INEFFICIENCY: Windows too narrow (avg \(String(format: "%.0f", (avgWidth/mainDisplay.width)*100))% width)\n"
+                    if avgWidth < mainDisplayResolution.width * 0.3 {
+                        prompt += "- INEFFICIENCY: Windows too narrow (avg \(String(format: "%.0f", (avgWidth/mainDisplayResolution.width)*100))% width)\n"
                     }
                     
-                    if avgHeight < mainDisplay.height * 0.4 {
-                        prompt += "- INEFFICIENCY: Windows too short (avg \(String(format: "%.0f", (avgHeight/mainDisplay.height)*100))% height)\n"
+                    if avgHeight < mainDisplayResolution.height * 0.4 {
+                        prompt += "- INEFFICIENCY: Windows too short (avg \(String(format: "%.0f", (avgHeight/mainDisplayResolution.height)*100))% height)\n"
                     }
                 }
             }

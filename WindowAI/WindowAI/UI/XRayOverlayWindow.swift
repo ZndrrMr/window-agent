@@ -7,8 +7,22 @@ class XRayOverlayWindow: NSWindow {
     private var windowOutlines: [NSView] = []
     private var numberLabels: [NSTextField] = []
     private var backgroundView: NSView!
+    private let displayIndex: Int
+    private let targetScreen: NSScreen
     
+    init(contentRect: NSRect, styleMask style: NSWindow.StyleMask, backing backingStoreType: NSWindow.BackingStoreType, defer flag: Bool, screen: NSScreen, displayIndex: Int) {
+        self.displayIndex = displayIndex
+        self.targetScreen = screen
+        super.init(contentRect: contentRect, styleMask: [.borderless], backing: backingStoreType, defer: flag)
+        
+        setupWindow()
+        setupBackgroundView()
+    }
+    
+    // Legacy init for backwards compatibility
     override init(contentRect: NSRect, styleMask style: NSWindow.StyleMask, backing backingStoreType: NSWindow.BackingStoreType, defer flag: Bool) {
+        self.displayIndex = 0
+        self.targetScreen = NSScreen.main ?? NSScreen.screens.first!
         super.init(contentRect: contentRect, styleMask: [.borderless], backing: backingStoreType, defer: flag)
         
         setupWindow()
@@ -24,10 +38,10 @@ class XRayOverlayWindow: NSWindow {
         self.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.maximumWindow)) + 1)
         self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         
-        // Cover entire screen
-        if let screen = NSScreen.main {
-            self.setFrame(screen.frame, display: true)
-        }
+        // Cover the specific target screen
+        self.setFrame(targetScreen.frame, display: true)
+        
+        print("🖥️ X-Ray overlay window created for display \(displayIndex): \(targetScreen.frame)")
     }
     
     // Prevent overlay window from becoming key window to avoid focus stealing
@@ -46,23 +60,35 @@ class XRayOverlayWindow: NSWindow {
     }
     
     func showWithWindows(_ windows: [WindowInfo]) {
+        // Filter windows for this display only
+        let displayWindows = filterWindowsForDisplay(windows)
+        
         // Clear existing outlines
         clearOutlines()
         
-        // Pre-calculate screen frame once
-        let screenFrame = NSScreen.main?.frame ?? CGRect.zero
+        // Use target screen frame for coordinate conversion
+        let screenFrame = targetScreen.frame
         
-        // Create outlines for each window
+        // Create outlines for each window on this display
         var outlineViews: [WindowOutlineView] = []
-        outlineViews.reserveCapacity(windows.count)
+        outlineViews.reserveCapacity(displayWindows.count)
         
-        for (index, windowInfo) in windows.enumerated() {
+        for (index, windowInfo) in displayWindows.enumerated() {
             let outlineView = WindowOutlineView(windowInfo: windowInfo, index: index + 1)
             
             // Convert from Accessibility coordinates (top-left origin) to Cocoa coordinates (bottom-left origin)
+            // Adjust for this display's coordinate system
+            let convertedX = windowInfo.bounds.origin.x - screenFrame.origin.x
+            let convertedY = screenFrame.height - (windowInfo.bounds.origin.y + windowInfo.bounds.height - screenFrame.origin.y)
+            
+            // Handle edge cases where coordinates might be outside screen bounds
+            // This can happen with external monitors that have negative origins
+            let clampedX = max(0, min(convertedX, screenFrame.width - windowInfo.bounds.width))
+            let clampedY = max(0, min(convertedY, screenFrame.height - windowInfo.bounds.height))
+            
             let convertedBounds = CGRect(
-                x: windowInfo.bounds.origin.x,
-                y: screenFrame.height - windowInfo.bounds.origin.y - windowInfo.bounds.height,
+                x: clampedX,
+                y: clampedY,
                 width: windowInfo.bounds.width,
                 height: windowInfo.bounds.height
             )
@@ -82,28 +108,41 @@ class XRayOverlayWindow: NSWindow {
         // Show window INSTANTLY (no animation for performance)
         self.alphaValue = 1.0
         self.orderFront(nil)
+        
+        print("🖥️ Display \(displayIndex): Showing \(displayWindows.count) windows")
     }
     
     // OPTIMIZED VERSION - Truly instant performance
     func showWithWindowsOptimized(_ windows: [WindowInfo]) {
+        // Filter windows for this display only
+        let displayWindows = filterWindowsForDisplay(windows)
+        
         // Clear existing outlines instantly
         clearOutlines()
         
-        // Pre-calculate screen frame once
-        let screenFrame = NSScreen.main?.frame ?? CGRect.zero
+        // Use target screen frame for coordinate conversion
+        let screenFrame = targetScreen.frame
         
-        // Create optimized outlines for each window
+        // Create optimized outlines for each window on this display
         var outlineViews: [OptimizedWindowOutlineView] = []
-        outlineViews.reserveCapacity(windows.count)
+        outlineViews.reserveCapacity(displayWindows.count)
         
         // Batch coordinate conversion
         var convertedFrames: [CGRect] = []
-        convertedFrames.reserveCapacity(windows.count)
+        convertedFrames.reserveCapacity(displayWindows.count)
         
-        for windowInfo in windows {
+        for windowInfo in displayWindows {
+            let convertedX = windowInfo.bounds.origin.x - screenFrame.origin.x
+            let convertedY = screenFrame.height - (windowInfo.bounds.origin.y + windowInfo.bounds.height - screenFrame.origin.y)
+            
+            // Handle edge cases where coordinates might be outside screen bounds
+            // This can happen with external monitors that have negative origins
+            let clampedX = max(0, min(convertedX, screenFrame.width - windowInfo.bounds.width))
+            let clampedY = max(0, min(convertedY, screenFrame.height - windowInfo.bounds.height))
+            
             let convertedBounds = CGRect(
-                x: windowInfo.bounds.origin.x,
-                y: screenFrame.height - windowInfo.bounds.origin.y - windowInfo.bounds.height,
+                x: clampedX,
+                y: clampedY,
                 width: windowInfo.bounds.width,
                 height: windowInfo.bounds.height
             )
@@ -111,7 +150,7 @@ class XRayOverlayWindow: NSWindow {
         }
         
         // Create views with pre-calculated frames
-        for (index, windowInfo) in windows.enumerated() {
+        for (index, windowInfo) in displayWindows.enumerated() {
             let outlineView = OptimizedWindowOutlineView(windowInfo: windowInfo, index: index + 1)
             outlineView.frame = convertedFrames[index]
             outlineViews.append(outlineView)
@@ -201,6 +240,23 @@ class XRayOverlayWindow: NSWindow {
                 _ = WindowManager.shared.focusWindow(windowInfo)
                 self.hideOverlay()
             }
+        }
+    }
+    
+    // MARK: - Multi-Display Support
+    
+    /// Filter windows to only show those on this display
+    private func filterWindowsForDisplay(_ windows: [WindowInfo]) -> [WindowInfo] {
+        let screenFrame = targetScreen.frame
+        
+        return windows.filter { window in
+            let windowCenter = CGPoint(
+                x: window.bounds.midX,
+                y: window.bounds.midY
+            )
+            
+            // Check if window center is within this display's bounds
+            return screenFrame.contains(windowCenter)
         }
     }
 }

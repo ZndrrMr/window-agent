@@ -6,7 +6,7 @@ class XRayWindowManager {
     
     static let shared = XRayWindowManager()
     
-    private var overlayWindow: XRayOverlayWindow?
+    private var overlayWindows: [XRayOverlayWindow] = []
     private var isOverlayVisible = false
     private var lastActivationTime: Date = Date()
     private var autoHideTask: DispatchWorkItem?
@@ -18,15 +18,8 @@ class XRayWindowManager {
     private let requestDebounceInterval: TimeInterval = 0.1 // 100ms debounce
     
     private init() {
-        // Pre-create overlay window for instant display
-        if let screen = NSScreen.main {
-            overlayWindow = XRayOverlayWindow(
-                contentRect: screen.frame,
-                styleMask: [.borderless],
-                backing: .buffered,
-                defer: false
-            )
-        }
+        // Pre-create overlay windows for all displays
+        createOverlayWindows()
         
         // Start background cache warming
         startBackgroundCacheWarming()
@@ -35,6 +28,46 @@ class XRayWindowManager {
     /// Start background cache warming to keep window data fresh
     private func startBackgroundCacheWarming() {
         // ELIMINATED - No cache system needed for maximum performance
+    }
+    
+    /// Create overlay windows for all connected displays
+    private func createOverlayWindows() {
+        overlayWindows.removeAll()
+        
+        for (index, screen) in NSScreen.screens.enumerated() {
+            let overlayWindow = XRayOverlayWindow(
+                contentRect: screen.frame,
+                styleMask: [.borderless],
+                backing: .buffered,
+                defer: false,
+                screen: screen,
+                displayIndex: index
+            )
+            overlayWindows.append(overlayWindow)
+        }
+        
+        print("🖥️ Created X-Ray overlay windows for \(overlayWindows.count) displays")
+    }
+    
+    /// Refresh overlay windows when display configuration changes
+    func refreshDisplayConfiguration() {
+        xrayQueue.async { [weak self] in
+            guard let self = self else { return }
+            
+            // Hide current overlays if visible
+            if self.isOverlayVisible {
+                DispatchQueue.main.async {
+                    for overlayWindow in self.overlayWindows {
+                        overlayWindow.hideOverlay()
+                    }
+                }
+            }
+            
+            // Recreate overlay windows for new display configuration
+            DispatchQueue.main.async {
+                self.createOverlayWindows()
+            }
+        }
     }
     
     // MARK: - Public Interface
@@ -97,8 +130,10 @@ class XRayWindowManager {
         
         let displayStart = Date()
         
-        // Use OPTIMIZED version for maximum performance
-        overlayWindow?.showWithWindowsOptimized(visibleWindows)
+        // Show overlays on all displays
+        for overlayWindow in overlayWindows {
+            overlayWindow.showWithWindowsOptimized(visibleWindows)
+        }
         
         let displayDuration = Date().timeIntervalSince(displayStart)
         
@@ -695,7 +730,10 @@ class XRayWindowManager {
             
             // Hide on main thread
             DispatchQueue.main.async {
-                self.overlayWindow?.hideOverlay()
+                // Hide all overlay windows
+                for overlayWindow in self.overlayWindows {
+                    overlayWindow.hideOverlay()
+                }
                 self.xrayQueue.async {
                     self.isOverlayVisible = false
                     self.isProcessingRequest = false
@@ -1141,18 +1179,20 @@ struct XRayConfiguration {
 extension XRayWindowManager {
     
     /// Show X-Ray overlay after window arrangement to visualize results
-    func showPostArrangementOverlay(delay: TimeInterval = 1.0) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-            self.showXRayOverlay()
-        }
-    }
+    // DISABLED: Automatic X-Ray triggers removed - only hotkey activation allowed
+    // func showPostArrangementOverlay(delay: TimeInterval = 1.0) {
+    //     DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+    //         self.showXRayOverlay()
+    //     }
+    // }
     
-    /// Quick preview mode - show briefly then auto-hide
-    func showQuickPreview(duration: TimeInterval = 3.0) {
-        showXRayOverlay()
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + duration) {
-            self.hideXRayOverlay()
-        }
-    }
+    // DISABLED: Automatic X-Ray triggers removed - only hotkey activation allowed
+    // /// Quick preview mode - show briefly then auto-hide
+    // func showQuickPreview(duration: TimeInterval = 3.0) {
+    //     showXRayOverlay()
+    //     
+    //     DispatchQueue.main.asyncAfter(deadline: .now() + duration) {
+    //         self.hideXRayOverlay()
+    //     }
+    // }
 }

@@ -595,7 +595,16 @@ class ToolToCommandConverter {
         }
         
         let display = extractDisplay(from: input)
-        let screenBounds = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        
+        // Get the correct display bounds based on the display parameter
+        let screenBounds: CGRect
+        if let displayIndex = display, displayIndex >= 0 && displayIndex < NSScreen.screens.count {
+            screenBounds = NSScreen.screens[displayIndex].visibleFrame
+            print("🖥️ Using display \(displayIndex) bounds: \(screenBounds)")
+        } else {
+            screenBounds = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1920, height: 1080)
+            print("🖥️ Using main display bounds: \(screenBounds)")
+        }
         
         // Parse position values
         let x: Double
