@@ -9,6 +9,13 @@ class XRayWindowManager {
     private var overlayWindow: XRayOverlayWindow?
     private var isOverlayVisible = false
     private var lastActivationTime: Date = Date()
+    private var autoHideTask: DispatchWorkItem?
+    
+    // MARK: - Concurrency Protection
+    private let xrayQueue = DispatchQueue(label: "xray-manager", qos: .userInitiated)
+    private var isProcessingRequest = false
+    private var lastRequestTime: Date = Date.distantPast
+    private let requestDebounceInterval: TimeInterval = 0.1 // 100ms debounce
     
     private init() {
         // Pre-create overlay window for instant display
@@ -32,13 +39,34 @@ class XRayWindowManager {
     
     // MARK: - Public Interface
     
-    /// Show the X-Ray overlay with all visible windows - PARALLEL PROCESSING
+    /// Show the X-Ray overlay with all visible windows - THREAD-SAFE with PARALLEL PROCESSING
     func showXRayOverlay() {
-        guard !isOverlayVisible else { return }
-        
-        // Use async parallel processing for maximum performance
-        Task {
-            await showXRayOverlayAsync()
+        xrayQueue.async { [weak self] in
+            guard let self = self else { return }
+            
+            // Prevent overlapping requests
+            guard !self.isProcessingRequest else {
+                print("🔍 X-Ray request ignored - already processing")
+                return
+            }
+            
+            // Check current state under queue protection
+            guard !self.isOverlayVisible else {
+                print("🔍 X-Ray request ignored - already visible")
+                return
+            }
+            
+            self.isProcessingRequest = true
+            
+            // Use async parallel processing for maximum performance
+            Task { [weak self] in
+                await self?.showXRayOverlayAsync()
+                await MainActor.run {
+                    self?.xrayQueue.async {
+                        self?.isProcessingRequest = false
+                    }
+                }
+            }
         }
     }
     
@@ -77,12 +105,15 @@ class XRayWindowManager {
         isOverlayVisible = true
         lastActivationTime = Date()
         
-        // Auto-hide after 10 seconds if no interaction
-        DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) {
+        // Auto-hide after 10 seconds if no interaction (cancellable)
+        let autoHideWork = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
             if self.isOverlayVisible && Date().timeIntervalSince(self.lastActivationTime) >= 10.0 {
                 self.hideXRayOverlay()
             }
         }
+        autoHideTask = autoHideWork
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10.0, execute: autoHideWork)
     }
     
     /// ULTRA-FAST synchronous window gathering with TIMING DIAGNOSTICS
@@ -647,24 +678,71 @@ class XRayWindowManager {
     
     /// Hide the X-Ray overlay
     func hideXRayOverlay() {
-        guard isOverlayVisible else { return }
-        
-        overlayWindow?.hideOverlay()
-        isOverlayVisible = false
-    }
-    
-    /// Toggle X-Ray overlay visibility
-    func toggleXRayOverlay() {
-        if isOverlayVisible {
-            hideXRayOverlay()
-        } else {
-            showXRayOverlay()
+        xrayQueue.async { [weak self] in
+            guard let self = self else { return }
+            
+            // Check current state under queue protection
+            guard self.isOverlayVisible else {
+                print("🔍 X-Ray hide ignored - already hidden")
+                return
+            }
+            
+            print("🔍 Hiding X-Ray overlay")
+            
+            // Cancel the auto-hide timer to prevent delayed execution
+            self.autoHideTask?.cancel()
+            self.autoHideTask = nil
+            
+            // Hide on main thread
+            DispatchQueue.main.async {
+                self.overlayWindow?.hideOverlay()
+                self.xrayQueue.async {
+                    self.isOverlayVisible = false
+                    self.isProcessingRequest = false
+                }
+            }
         }
     }
     
-    /// Check if overlay is currently visible
+    /// Toggle X-Ray overlay visibility with debouncing and concurrency protection
+    func toggleXRayOverlay() {
+        xrayQueue.async { [weak self] in
+            guard let self = self else { return }
+            
+            let now = Date()
+            
+            // Debounce rapid toggle requests
+            let timeSinceLastRequest = now.timeIntervalSince(self.lastRequestTime)
+            if timeSinceLastRequest < self.requestDebounceInterval {
+                print("🔍 X-Ray toggle ignored - within debounce period (\(String(format: "%.2f", timeSinceLastRequest))s)")
+                return
+            }
+            
+            // Prevent overlapping operations
+            guard !self.isProcessingRequest else {
+                print("🔍 X-Ray toggle ignored - already processing")
+                return
+            }
+            
+            self.lastRequestTime = now
+            
+            print("🔍 X-Ray toggle request - current state: \(self.isOverlayVisible ? "visible" : "hidden")")
+            
+            if self.isOverlayVisible {
+                // Hide request
+                self.hideXRayOverlay()
+            } else {
+                // Show request
+                self.showXRayOverlay()
+            }
+        }
+    }
+    
+    /// Check if overlay is currently visible (thread-safe)
     func isXRayVisible() -> Bool {
-        return isOverlayVisible
+        return xrayQueue.sync {
+            return isOverlayVisible
+        }
     }
     
     /// Focus window by number (1-9)

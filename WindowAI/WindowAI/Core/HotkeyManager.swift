@@ -1,4 +1,4 @@
-import Cocoa
+ import Cocoa
 import Carbon
 
 protocol HotkeyManagerDelegate: AnyObject {
@@ -17,6 +17,10 @@ class HotkeyManager {
     private var commandKeyTapTimes: [Date] = []
     private let doubleTapThreshold: TimeInterval = 0.5
     private let commandKeyCode: UInt16 = 55 // Left Command key
+    
+    // Debouncing to prevent rapid triggers
+    private var lastDoubleTapTime: Date = Date.distantPast
+    private let doubleTapCooldown: TimeInterval = 0.2 // 200ms cooldown
     
     // Hotkey refs for multiple hotkeys
     private var xrayHotKeyRef: EventHotKeyRef?
@@ -179,6 +183,13 @@ class HotkeyManager {
     private func handleCommandKeyTap() {
         let now = Date()
         
+        // Check cooldown period to prevent rapid triggers
+        let timeSinceLastDoubleTap = now.timeIntervalSince(lastDoubleTapTime)
+        if timeSinceLastDoubleTap < doubleTapCooldown {
+            print("🔍 Command key tap ignored - within cooldown period (\(String(format: "%.2f", timeSinceLastDoubleTap))s)")
+            return
+        }
+        
         // Clean up old tap times (older than threshold)
         commandKeyTapTimes = commandKeyTapTimes.filter { 
             now.timeIntervalSince($0) <= doubleTapThreshold 
@@ -195,6 +206,7 @@ class HotkeyManager {
             
             if timeBetweenTaps <= doubleTapThreshold {
                 print("🔍 Double-tap Command key detected! Activating X-Ray overlay")
+                lastDoubleTapTime = now // Record successful double-tap time
                 handleDoubleTapCommand()
                 commandKeyTapTimes.removeAll() // Reset after successful double-tap
             }

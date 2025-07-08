@@ -11,6 +11,11 @@ struct WindowInfo {
 class WindowManager {
     static let shared = WindowManager()
     
+    // MARK: - Window Visibility Caching for Performance
+    private var visibilityCache: [String: (result: Bool, timestamp: Date)] = [:]
+    private let cacheTimeout: TimeInterval = 0.5 // Cache results for 500ms
+    private let visibilityCacheQueue = DispatchQueue(label: "visibility-cache", attributes: .concurrent)
+    
     private init() {
         _ = checkAccessibilityPermissions()
     }
@@ -1079,17 +1084,75 @@ extension WindowManager {
     func isWindowVisible(_ windowInfo: WindowInfo) -> Bool {
         guard checkAccessibilityPermissions() else { return false }
         
-        // Add timeout protection to prevent hanging on slow apps
-        return withTimeout(0.05) { // 50ms max per window
-            var isMinimized: CFTypeRef?
-            let result = AXUIElementCopyAttributeValue(windowInfo.windowRef, kAXMinimizedAttribute as CFString, &isMinimized)
+        // Create safe cache key by sanitizing strings and handling potential nil values
+        let safeAppName = windowInfo.appName.isEmpty ? "Unknown" : windowInfo.appName.replacingOccurrences(of: ":", with: "_")
+        let safeTitle = windowInfo.title.isEmpty ? "Untitled" : windowInfo.title.replacingOccurrences(of: ":", with: "_")
+        let cacheKey = "\(safeAppName):\(safeTitle)"
+        
+        // Check cache first for performance
+        return visibilityCacheQueue.sync {
+            let now = Date()
             
-            if result == .success, let minimized = isMinimized as? Bool {
-                return !minimized
+            // Safely check cache with proper error handling
+            do {
+                if let cached = visibilityCache[cacheKey],
+                   now.timeIntervalSince(cached.timestamp) < cacheTimeout {
+                    return cached.result
+                }
+            } catch {
+                // Clear cache if there's any corruption
+                visibilityCache.removeAll()
             }
             
-            return true // Assume visible if we can't determine
-        } ?? true // Default to visible on timeout
+            // App-specific timeout optimization
+            let timeout: TimeInterval = getTimeoutForApp(windowInfo.appName)
+            
+            // Perform visibility check with optimized timeout
+            let result = withTimeout(timeout) {
+                var isMinimized: CFTypeRef?
+                let axResult = AXUIElementCopyAttributeValue(windowInfo.windowRef, kAXMinimizedAttribute as CFString, &isMinimized)
+                
+                if axResult == .success, let minimized = isMinimized as? Bool {
+                    return !minimized
+                }
+                
+                return true // Assume visible if we can't determine
+            } ?? true // Default to visible on timeout
+            
+            // Safely cache the result with error handling
+            do {
+                visibilityCache[cacheKey] = (result: result, timestamp: now)
+                
+                // Clean up old cache entries periodically
+                if visibilityCache.count > 50 {
+                    cleanupVisibilityCache(currentTime: now)
+                }
+            } catch {
+                // If caching fails, clear cache and continue
+                visibilityCache.removeAll()
+            }
+            
+            return result
+        }
+    }
+    
+    /// Get optimized timeout for specific apps based on known performance characteristics
+    private func getTimeoutForApp(_ appName: String) -> TimeInterval {
+        switch appName.lowercased() {
+        case "finder", "xcode", "safari", "chrome":
+            return 0.04 // 40ms for potentially slow apps
+        case "terminal", "iterm2", "cursor", "arc":
+            return 0.025 // 25ms for usually fast apps
+        default:
+            return 0.03 // 30ms default (improved from 50ms)
+        }
+    }
+    
+    /// Clean up old cache entries to prevent memory buildup
+    private func cleanupVisibilityCache(currentTime: Date) {
+        visibilityCache = visibilityCache.filter { _, value in
+            currentTime.timeIntervalSince(value.timestamp) < cacheTimeout * 2
+        }
     }
     
     /// Timeout wrapper for Accessibility API calls to prevent hanging
@@ -1115,14 +1178,21 @@ extension WindowManager {
     func isWindowVisibleAsync(_ windowInfo: WindowInfo) async -> Bool {
         guard checkAccessibilityPermissions() else { return false }
         
+        // Perform visibility check without caching in async version to avoid crashes
+        // The caching will be handled by the sync version
         return await withCheckedContinuation { continuation in
-            var isMinimized: CFTypeRef?
-            let result = AXUIElementCopyAttributeValue(windowInfo.windowRef, kAXMinimizedAttribute as CFString, &isMinimized)
-            
-            if result == .success, let minimized = isMinimized as? Bool {
-                continuation.resume(returning: !minimized)
-            } else {
-                continuation.resume(returning: true) // Assume visible if we can't determine
+            DispatchQueue.global(qos: .userInitiated).async {
+                var isMinimized: CFTypeRef?
+                let axResult = AXUIElementCopyAttributeValue(windowInfo.windowRef, kAXMinimizedAttribute as CFString, &isMinimized)
+                
+                let result: Bool
+                if axResult == .success, let minimized = isMinimized as? Bool {
+                    result = !minimized
+                } else {
+                    result = true // Assume visible if we can't determine
+                }
+                
+                continuation.resume(returning: result)
             }
         }
     }

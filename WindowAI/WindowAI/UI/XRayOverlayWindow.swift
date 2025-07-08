@@ -30,6 +30,16 @@ class XRayOverlayWindow: NSWindow {
         }
     }
     
+    // Prevent overlay window from becoming key window to avoid focus stealing
+    override var canBecomeKey: Bool {
+        return false
+    }
+    
+    // Prevent overlay window from becoming main window
+    override var canBecomeMain: Bool {
+        return false
+    }
+    
     private func setupBackgroundView() {
         backgroundView = XRayBackgroundView(frame: self.contentView!.bounds)
         self.contentView = backgroundView
@@ -71,7 +81,7 @@ class XRayOverlayWindow: NSWindow {
         
         // Show window INSTANTLY (no animation for performance)
         self.alphaValue = 1.0
-        self.makeKeyAndOrderFront(nil)
+        self.orderFront(nil)
     }
     
     // OPTIMIZED VERSION - Truly instant performance
@@ -119,7 +129,7 @@ class XRayOverlayWindow: NSWindow {
         
         // Show window INSTANTLY (no animation for performance)
         self.alphaValue = 1.0
-        self.makeKeyAndOrderFront(nil)
+        self.orderFront(nil)
     }
     
     func hideOverlay() {
