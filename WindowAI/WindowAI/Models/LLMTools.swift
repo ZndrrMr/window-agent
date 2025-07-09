@@ -364,8 +364,21 @@ class ToolToCommandConverter {
             let pixelStr = String(value.dropLast(2))
             return Double(pixelStr).map { CGFloat($0) }
         } else {
-            // Percentage value (e.g., "75" or "33.5")
-            return Double(value).map { screenSize * CGFloat($0 / 100.0) }
+            // Percentage value (e.g., "75", "33.5", or "50%")
+            let percentage = parsePercentageValue(value)
+            return screenSize * CGFloat(percentage / 100.0)
+        }
+    }
+    
+    // Helper to parse percentage value (handles both "50%" and "50.0" formats)
+    private static func parsePercentageValue(_ value: String) -> Double {
+        if value.hasSuffix("%") {
+            // Handle "50%" format
+            let numberStr = String(value.dropLast(1))
+            return Double(numberStr) ?? 0
+        } else {
+            // Handle "50.0" or "50" format
+            return Double(value) ?? 0
         }
     }
     
@@ -613,14 +626,14 @@ class ToolToCommandConverter {
         if xPos.hasSuffix("px") {
             x = Double(xPos.dropLast(2)) ?? 0
         } else {
-            let percentage = Double(xPos) ?? 0
+            let percentage = parsePercentageValue(xPos)
             x = screenBounds.width * (percentage / 100.0)
         }
         
         if yPos.hasSuffix("px") {
             y = Double(yPos.dropLast(2)) ?? 0
         } else {
-            let percentage = Double(yPos) ?? 0
+            let percentage = parsePercentageValue(yPos)
             y = screenBounds.height * (percentage / 100.0)
         }
         
@@ -631,14 +644,14 @@ class ToolToCommandConverter {
         if width.hasSuffix("px") {
             w = Double(width.dropLast(2)) ?? 0
         } else {
-            let percentage = Double(width) ?? 0
+            let percentage = parsePercentageValue(width)
             w = screenBounds.width * (percentage / 100.0)
         }
         
         if height.hasSuffix("px") {
             h = Double(height.dropLast(2)) ?? 0
         } else {
-            let percentage = Double(height) ?? 0
+            let percentage = parsePercentageValue(height)
             h = screenBounds.height * (percentage / 100.0)
         }
         
