@@ -34,8 +34,9 @@ class HotkeyManager {
     init() {
         HotkeyManager.sharedInstance = self
         setupHotkeyHandler()
-        setupCommandKeyMonitoring()
-        _ = registerXRayHotkey()
+        // TODO: Re-enable after X-Ray overlay visual polish is complete
+        // setupCommandKeyMonitoring()  // Double-tap Command detection disabled
+        // _ = registerXRayHotkey()      // Command+Shift+X hotkey disabled
     }
     
     deinit {
