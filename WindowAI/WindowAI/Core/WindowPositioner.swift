@@ -166,8 +166,17 @@ class WindowPositioner {
                 if !openResult.success {
                     return openResult
                 }
-                // Wait for app to launch before continuing
-                Thread.sleep(forTimeInterval: 1.0)
+                
+                // FIX 1: Return early if this is an open+position command to prevent dual execution
+                if command.customPosition != nil || command.customSize != nil {
+                    print("🔄 App opened with positioning - returning early to prevent duplicate positioning")
+                    return openResult
+                }
+                
+                // If no positioning needed, wait for window to be ready
+                if !waitForAppWindowReadySync(appName: command.target, timeout: getAppLaunchTimeout(for: command.target)) {
+                    return CommandResult(success: false, message: "App '\(command.target)' launched but window not ready", command: command)
+                }
             }
         }
         
@@ -482,20 +491,9 @@ class WindowPositioner {
             if success {
                 print("  ✅ App launched successfully")
                 if (command.position != nil || command.size != nil) {
-                    print("  ⏳ Waiting to position window...")
-                    // Wait a moment for the app to launch, then position it
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                        if let window = self.windowManager.getWindowsForApp(named: command.target).first {
-                            if let position = command.position, let size = command.size {
-                                let displayIndex = command.display ?? 0
-                                let calculatedSize = self.calculateSize(size, for: command.target, on: displayIndex)
-                                let calculatedPosition = self.calculatePosition(position, size: calculatedSize, on: displayIndex)
-                                let bounds = CGRect(origin: calculatedPosition, size: calculatedSize)
-                                let result = self.windowManager.setWindowBounds(window, bounds: bounds)
-                                print("  📍 Positioned window: \(result ? "✅" : "❌")")
-                            }
-                        }
-                    }
+                    print("  ⏳ Waiting for window to be ready for positioning...")
+                    // Use intelligent polling instead of fixed delay
+                    waitForAppWindowReady(appName: command.target, command: command)
                 }
             } else {
                 print("  ❌ Failed to launch app")
@@ -507,6 +505,187 @@ class WindowPositioner {
             print("  ❌ Could not find bundle ID for '\(command.target)'")
             return CommandResult(success: false, message: "Could not find app '\(command.target)'", command: command)
         }
+    }
+    
+    /// Efficiently waits for an app window to be ready for positioning using polling with timeout
+    private func waitForAppWindowReady(appName: String, command: WindowCommand) {
+        let timeout = getAppLaunchTimeout(for: appName)
+        let pollInterval: TimeInterval = 0.1 // Poll every 100ms
+        
+        print("  🔍 Polling for window availability (timeout: \(timeout)s)")
+        
+        // Use async task to avoid blocking
+        Task {
+            let startTime = CFAbsoluteTimeGetCurrent()
+            var attempts = 0
+            
+            while CFAbsoluteTimeGetCurrent() - startTime < timeout {
+                attempts += 1
+                
+                // Check if window is available and accessible
+                let windows = windowManager.getWindowsForApp(named: appName)
+                
+                if let window = windows.first {
+                    // Additional check: ensure window is actually ready for positioning
+                    // by verifying it has valid bounds and is not minimized
+                    if !windowManager.isWindowMinimized(window) && 
+                       window.bounds.width > 0 && window.bounds.height > 0 {
+                        let elapsedTime = CFAbsoluteTimeGetCurrent() - startTime
+                        print("  🎯 Window ready after \(String(format: "%.2f", elapsedTime))s (\(attempts) attempts)")
+                        
+                        // Position the window on main thread
+                        DispatchQueue.main.async {
+                            self.positionAppWindow(window: window, command: command)
+                        }
+                        return
+                    }
+                }
+                
+                // Wait before next poll
+                try? await Task.sleep(nanoseconds: UInt64(pollInterval * 1_000_000_000))
+            }
+            
+            // Timeout reached
+            let elapsedTime = CFAbsoluteTimeGetCurrent() - startTime
+            print("  ⏰ Timeout reached after \(String(format: "%.2f", elapsedTime))s (\(attempts) attempts)")
+            print("  ⚠️ Window not ready for positioning")
+        }
+    }
+    
+    /// Positions a window according to the command parameters
+    private func positionAppWindow(window: WindowInfo, command: WindowCommand) {
+        guard let position = command.position, let size = command.size else {
+            print("  ⚠️ No position or size specified for window positioning")
+            return
+        }
+        
+        let displayIndex = command.display ?? 0
+        let calculatedSize = self.calculateSize(size, for: command.target, on: displayIndex)
+        let calculatedPosition = self.calculatePosition(position, size: calculatedSize, on: displayIndex)
+        let bounds = CGRect(origin: calculatedPosition, size: calculatedSize)
+        
+        print("  📐 Positioning window: \(bounds)")
+        let result = self.windowManager.setWindowBounds(window, bounds: bounds)
+        print("  📍 Window positioned: \(result ? "✅ SUCCESS" : "❌ FAILED")")
+        
+        // Handle focus if needed
+        if let parameters = command.parameters,
+           let focusParam = parameters["focus"],
+           focusParam.lowercased() == "true" {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                let focusSuccess = self.windowManager.focusWindow(window)
+                print("  🎯 Focus set: \(focusSuccess ? "✅" : "❌")")
+            }
+        }
+    }
+    
+    /// Synchronously waits for an app window to be ready for positioning
+    /// Returns true if window becomes ready within timeout, false otherwise
+    private func waitForAppWindowReadySync(appName: String, timeout: TimeInterval) -> Bool {
+        let pollInterval: TimeInterval = 0.1 // Poll every 100ms
+        let startTime = CFAbsoluteTimeGetCurrent()
+        var attempts = 0
+        
+        print("  🔍 Synchronously polling for window availability (timeout: \(timeout)s)")
+        
+        while CFAbsoluteTimeGetCurrent() - startTime < timeout {
+            attempts += 1
+            
+            // Check if window is available and accessible
+            let windows = windowManager.getWindowsForApp(named: appName)
+            
+            if let window = windows.first {
+                // Additional check: ensure window is actually ready for positioning
+                // by verifying it has valid bounds and is not minimized
+                if !windowManager.isWindowMinimized(window) && 
+                   window.bounds.width > 0 && window.bounds.height > 0 {
+                    let elapsedTime = CFAbsoluteTimeGetCurrent() - startTime
+                    print("  🎯 Window ready after \(String(format: "%.2f", elapsedTime))s (\(attempts) attempts)")
+                    return true
+                }
+            }
+            
+            // Wait before next poll
+            Thread.sleep(forTimeInterval: pollInterval)
+        }
+        
+        // Timeout reached
+        let elapsedTime = CFAbsoluteTimeGetCurrent() - startTime
+        print("  ⏰ Timeout reached after \(String(format: "%.2f", elapsedTime))s (\(attempts) attempts)")
+        return false
+    }
+    
+    /// Efficiently waits for unminimize operations to complete by polling window states
+    /// Returns true if all windows are restored within timeout, false otherwise
+    private func waitForUnminimizeOperationsComplete(windows: [WindowInfo], timeout: TimeInterval = 3.0) -> Bool {
+        let pollInterval: TimeInterval = 0.1 // Poll every 100ms
+        let startTime = CFAbsoluteTimeGetCurrent()
+        var attempts = 0
+        
+        print("  🔍 Polling for unminimize operations completion (timeout: \(timeout)s)")
+        
+        while CFAbsoluteTimeGetCurrent() - startTime < timeout {
+            attempts += 1
+            
+            // Check if all windows are no longer minimized
+            let stillMinimized = windows.filter { windowManager.isWindowMinimized($0) }
+            
+            if stillMinimized.isEmpty {
+                let elapsedTime = CFAbsoluteTimeGetCurrent() - startTime
+                print("  🎯 All windows restored after \(String(format: "%.2f", elapsedTime))s (\(attempts) attempts)")
+                return true
+            }
+            
+            // Show progress
+            if attempts % 10 == 0 { // Every 1 second
+                print("  ⏳ Still waiting for \(stillMinimized.count) windows to restore...")
+            }
+            
+            // Wait before next poll
+            Thread.sleep(forTimeInterval: pollInterval)
+        }
+        
+        // Timeout reached
+        let elapsedTime = CFAbsoluteTimeGetCurrent() - startTime
+        let stillMinimized = windows.filter { windowManager.isWindowMinimized($0) }
+        print("  ⏰ Timeout reached after \(String(format: "%.2f", elapsedTime))s (\(attempts) attempts)")
+        print("  ⚠️ \(stillMinimized.count) windows still minimized")
+        return false
+    }
+    
+    /// Returns appropriate timeout for app launch based on app characteristics
+    private func getAppLaunchTimeout(for appName: String) -> TimeInterval {
+        let appLower = appName.lowercased()
+        
+        // Fast-launching apps (typically < 1 second)
+        if appLower.contains("terminal") || appLower.contains("textedit") || 
+           appLower.contains("calculator") || appLower.contains("notes") {
+            return 2.0
+        }
+        
+        // Medium-launching apps (typically 1-3 seconds)
+        if appLower.contains("safari") || appLower.contains("chrome") || 
+           appLower.contains("firefox") || appLower.contains("arc") ||
+           appLower.contains("messages") || appLower.contains("mail") {
+            return 5.0
+        }
+        
+        // Slow-launching apps (typically 3-8 seconds)
+        if appLower.contains("xcode") || appLower.contains("photoshop") ||
+           appLower.contains("illustrator") || appLower.contains("premiere") ||
+           appLower.contains("final cut") || appLower.contains("unity") {
+            return 12.0
+        }
+        
+        // Code editors and IDEs (typically 2-5 seconds)
+        if appLower.contains("cursor") || appLower.contains("vscode") ||
+           appLower.contains("sublime") || appLower.contains("atom") ||
+           appLower.contains("intellij") || appLower.contains("pycharm") {
+            return 8.0
+        }
+        
+        // Default timeout for unknown apps
+        return 6.0
     }
     
     private func closeWindow(_ command: WindowCommand) -> CommandResult {
@@ -547,9 +726,8 @@ class WindowPositioner {
                 }
             }
             
-            // Wait for all unminimize operations to complete
-            print("⏳ Waiting for unminimize operations to complete...")
-            Thread.sleep(forTimeInterval: 1.0)
+            // Wait for all unminimize operations to complete efficiently
+            waitForUnminimizeOperationsComplete(windows: allWindows, timeout: 3.0)
             
             // PHASE 2: Use NEW FlexibleLayoutEngine instead of old cascade positioner
             print("\n📐 PHASE 2: Intelligent FlexibleLayoutEngine positioning")
@@ -667,8 +845,11 @@ class WindowPositioner {
                                                        launchIdentifier: nil) {
                     results.append("Launched \(appContext.appName)")
                     print("    ✅ Launched successfully")
-                    // Wait a bit for the app to launch
-                    Thread.sleep(forTimeInterval: 1.0)
+                    // Wait efficiently for the app window to be ready
+                    if !waitForAppWindowReadySync(appName: appContext.appName, timeout: getAppLaunchTimeout(for: appContext.appName)) {
+                        print("    ⚠️ App launched but window not ready within timeout")
+                        errors.append("Window not ready for \(appContext.appName)")
+                    }
                 } else {
                     print("    ❌ Failed to launch")
                     errors.append("Failed to launch \(appContext.appName)")
@@ -982,9 +1163,8 @@ class WindowPositioner {
             }
         }
         
-        // Wait for all unminimize operations to complete
-        print("⏳ Waiting for unminimize operations to complete...")
-        Thread.sleep(forTimeInterval: 1.0)
+        // Wait for all unminimize operations to complete efficiently
+        waitForUnminimizeOperationsComplete(windows: windows, timeout: 3.0)
         
         print("\n📐 PHASE 2: Positioning all windows")
         print("==================================")
@@ -1184,9 +1364,8 @@ class WindowPositioner {
             }
         }
         
-        // Wait for all unminimize operations to complete
-        print("⏳ Waiting for unminimize operations to complete...")
-        Thread.sleep(forTimeInterval: 1.0)
+        // Wait for all unminimize operations to complete efficiently
+        waitForUnminimizeOperationsComplete(windows: windows, timeout: 3.0)
         
         // PHASE 2: Position ALL windows
         print("\n📐 PHASE 2: Positioning all windows")
