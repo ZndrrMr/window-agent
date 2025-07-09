@@ -557,6 +557,8 @@ class GeminiLLMService {
         - Use coordinates when positioning is needed
         - Use lifecycle parameters when opening/minimizing/focusing is needed
         - Use `close_app` only when user specifically wants to close/quit an app
+        - When making sweeping changes (ie. things that you think should take up the whole screen like 'research' or 'open safari in fullscreen' or 'i want to code') -> Minimize everything that wasn't part of your action that is currently open first
+        - When making finite changes (ie. things that don't take up the whole screen like 'move terminal to the right 1/3' or 'put claude in the top right quarter and terminal in the bottom right quarter') -> Do not minimize everything that wasn't part of the action
 
         **CRITICAL EXAMPLES TO BASE ACTIONS OFF OF:**
 

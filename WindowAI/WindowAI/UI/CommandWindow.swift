@@ -190,16 +190,8 @@ class CommandWindow: NSWindow {
             blurView.heightAnchor.constraint(equalToConstant: 88)
         ])
         
-        // Update gradient layer frames when layout changes
-        DispatchQueue.main.async {
-            if let sublayers = self.blurView.layer?.sublayers {
-                for layer in sublayers {
-                    if let gradientLayer = layer as? CAGradientLayer {
-                        gradientLayer.frame = self.blurView.bounds
-                    }
-                }
-            }
-        }
+        // Update gradient layer frames when layout changes - avoid dispatch in setup
+        updateGradientLayerFrames()
     }
     
     // MARK: - Public Methods
@@ -249,7 +241,7 @@ class CommandWindow: NSWindow {
             self.animator().setFrame(endFrame, display: true)
         }) {
             // Focus the text field after animation with delay to prevent selection
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, qos: .userInteractive) {
                 self.focusTextField()
             }
         }
@@ -330,7 +322,8 @@ class CommandWindow: NSWindow {
                 
                 // Check if click is outside our window
                 if !windowFrame.contains(globalClickLocation) {
-                    DispatchQueue.main.async {
+                    // Use userInteractive QoS to avoid priority inversion with UI
+                    DispatchQueue.main.async(qos: .userInteractive) {
                         self.hideWindow()
                     }
                 }
@@ -356,6 +349,16 @@ class CommandWindow: NSWindow {
         self.setFrameOrigin(NSPoint(x: x, y: y))
     }
     
+    private func updateGradientLayerFrames() {
+        if let sublayers = self.blurView.layer?.sublayers {
+            for layer in sublayers {
+                if let gradientLayer = layer as? CAGradientLayer {
+                    gradientLayer.frame = self.blurView.bounds
+                }
+            }
+        }
+    }
+    
     private func focusTextField() {
         // Simple, clean focus approach
         self.makeKey()
@@ -370,11 +373,9 @@ class CommandWindow: NSWindow {
                 editor.isAutomaticQuoteSubstitutionEnabled = false
                 editor.isAutomaticDashSubstitutionEnabled = false
                 
-                // Position cursor at end of any existing text
-                DispatchQueue.main.async {
-                    let textLength = self.commandTextField.stringValue.count
-                    editor.setSelectedRange(NSRange(location: textLength, length: 0))
-                }
+                // Position cursor at end of any existing text - avoid nested dispatch
+                let textLength = self.commandTextField.stringValue.count
+                editor.setSelectedRange(NSRange(location: textLength, length: 0))
             }
         }
     }
@@ -395,8 +396,8 @@ class CommandWindow: NSWindow {
             userInfo: ["command": command]
         )
         
-        // Hide window after command execution
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+        // Hide window after command execution with appropriate QoS
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, qos: .userInteractive) {
             self.hideWindow()
         }
     }
@@ -506,16 +507,14 @@ extension CommandWindow: AutocompleteDropdownDelegate {
         stylingTimer?.invalidate()
         stylingTimer = nil
         
-        // Position cursor at end first
-        DispatchQueue.main.async {
-            if let editor = self.commandTextField.currentEditor() as? NSTextView {
-                let length = self.commandTextField.stringValue.count
-                editor.setSelectedRange(NSRange(location: length, length: 0))
-                
-                // Delay styling to avoid interference with cursor positioning
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    self.commandTextField.updateTextWithAppStyling()
-                }
+        // Position cursor at end immediately - avoid nested dispatches
+        if let editor = self.commandTextField.currentEditor() as? NSTextView {
+            let length = self.commandTextField.stringValue.count
+            editor.setSelectedRange(NSRange(location: length, length: 0))
+            
+            // Schedule styling update with single dispatch
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, qos: .userInteractive) {
+                self.commandTextField.updateTextWithAppStyling()
             }
         }
         
