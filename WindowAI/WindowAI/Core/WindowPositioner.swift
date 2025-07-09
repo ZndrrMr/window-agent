@@ -478,33 +478,22 @@ class WindowPositioner {
     private func openApp(_ command: WindowCommand) -> CommandResult {
         print("\n🚀 OPENING: \(command.target)")
         
-        // This will be handled by AppLauncher, but we can set initial position/size
-        let bundleID = getBundleID(for: command.target)
+        // Use centralized app discovery service for comprehensive app launching
+        let success = AppDiscoveryService.shared.launchApp(named: command.target)
         
-        if let bundleID = bundleID {
-            print("  📦 Found bundle ID: \(bundleID)")
-            let success = NSWorkspace.shared.launchApplication(withBundleIdentifier: bundleID, 
-                                                             options: [], 
-                                                             additionalEventParamDescriptor: nil, 
-                                                             launchIdentifier: nil)
-            
-            if success {
-                print("  ✅ App launched successfully")
-                if (command.position != nil || command.size != nil) {
-                    print("  ⏳ Waiting for window to be ready for positioning...")
-                    // Use intelligent polling instead of fixed delay
-                    waitForAppWindowReady(appName: command.target, command: command)
-                }
-            } else {
-                print("  ❌ Failed to launch app")
+        if success {
+            print("  ✅ App launched successfully")
+            if (command.position != nil || command.size != nil) {
+                print("  ⏳ Waiting for window to be ready for positioning...")
+                // Use intelligent polling instead of fixed delay
+                waitForAppWindowReady(appName: command.target, command: command)
             }
-            
-            let message = success ? "Opened \(command.target)" : "Failed to open \(command.target)"
-            return CommandResult(success: success, message: message, command: command)
         } else {
-            print("  ❌ Could not find bundle ID for '\(command.target)'")
-            return CommandResult(success: false, message: "Could not find app '\(command.target)'", command: command)
+            print("  ❌ Failed to launch app '\(command.target)'")
         }
+        
+        let message = success ? "Opened \(command.target)" : "Failed to open \(command.target)"
+        return CommandResult(success: success, message: message, command: command)
     }
     
     /// Efficiently waits for an app window to be ready for positioning using polling with timeout
@@ -1489,10 +1478,9 @@ class WindowPositioner {
         return screens[displayIndex].frame
     }
     
+    // Use centralized app discovery service for bundle ID resolution
     private func getBundleID(for appName: String) -> String? {
-        return NSWorkspace.shared.runningApplications.first {
-            $0.localizedName?.lowercased() == appName.lowercased()
-        }?.bundleIdentifier
+        return AppDiscoveryService.shared.getBundleID(for: appName)
     }
     
     private func getCurrentWindowSize(for appName: String) -> CGSize? {

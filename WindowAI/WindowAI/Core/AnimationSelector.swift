@@ -366,10 +366,9 @@ class AnimationSelector {
         return recentAnimationCount > 8
     }
     
+    // Use centralized app discovery service for bundle ID resolution
     private func getBundleID(for appName: String) -> String? {
-        return NSWorkspace.shared.runningApplications.first {
-            $0.localizedName?.lowercased() == appName.lowercased()
-        }?.bundleIdentifier
+        return AppDiscoveryService.shared.getBundleID(for: appName)
     }
 }
 
