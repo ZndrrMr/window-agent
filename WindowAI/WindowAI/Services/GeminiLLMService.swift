@@ -771,6 +771,7 @@ class GeminiLLMService {
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.setValue("en", forHTTPHeaderField: "Accept-Language")
         
         do {
             let encoder = JSONEncoder()
@@ -1010,6 +1011,7 @@ class GeminiLLMService {
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.setValue("en", forHTTPHeaderField: "Accept-Language")
         
         do {
             let encoder = JSONEncoder()
@@ -1021,6 +1023,7 @@ class GeminiLLMService {
             print("URL: \(urlString)")
             print("Method: POST")
             print("Content-Type: application/json")
+            print("Accept-Language: en")
             print("Body Size: \(requestData.count) bytes")
             
             let (data, response) = try await urlSession.data(for: urlRequest)
