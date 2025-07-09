@@ -591,7 +591,7 @@ class GeminiLLMService {
         
         Expected output:
         "toolCalls":["flexible_position(\n    app_name: \"Terminal\",\n    minimize: \"true\"\n)","flexible_position(\n    app_name: \"Xcode\",\n    minimize: \"true\"\n)","flexible_position(\n    app_name: \"Arc\",\n    minimize: \"true\"\n)"]
-        Note for "minimize all windows":
+        Note for "minimize all windowsm":
         Expected: Only minimize currently visible windows
         WRONG: Don't scan entire system for every possible app"
         

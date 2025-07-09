@@ -285,10 +285,14 @@ class WindowAIController: HotkeyManagerDelegate, LLMServiceDelegate {
         // Parallel data gathering
         async let allWindows = windowManager.getAllWindowsAsync()
         async let displays = windowManager.getAllDisplayInfo()
-        async let runningApps = getRunningAppNamesAsync()
         
         // Wait for core data
-        let (windows, displayInfo, apps) = await (allWindows, displays, runningApps)
+        let (windows, displayInfo) = await (allWindows, displays)
+        
+        // Extract apps that have windows (no need for separate async call)
+        let apps = Set(windows.map { $0.appName })
+            .filter { !$0.isEmpty }
+            .sorted()
         
         print("⚡️ Parallel context building complete: \(windows.count) windows from \(apps.count) apps")
         
@@ -325,15 +329,6 @@ class WindowAIController: HotkeyManagerDelegate, LLMServiceDelegate {
         )
     }
     
-    private func getRunningAppNamesAsync() async -> [String] {
-        return await withCheckedContinuation { continuation in
-            let runningApps = NSWorkspace.shared.runningApplications
-                .compactMap { $0.localizedName }
-                .filter { !$0.isEmpty }
-                .sorted()
-            continuation.resume(returning: runningApps)
-        }
-    }
     
     private func enrichWindowsWithMetadataAsync(_ windows: [WindowInfo], displays: [DisplayInfo]) async -> [LLMContext.WindowSummary] {
         let windowManager = WindowManager.shared
