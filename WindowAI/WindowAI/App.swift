@@ -248,12 +248,12 @@ class WindowAIController: HotkeyManagerDelegate, LLMServiceDelegate {
             )
         }
         
-        // Get screen resolutions
-        let screenResolutions = displays.map { $0.frame.size }
+        // Get screen resolutions (use visible frame to exclude menu bar)
+        let screenResolutions = displays.map { $0.visibleFrame.size }
         
-        // Build display descriptions for the prompt
+        // Build display descriptions for the prompt (use visible frame)
         let displayDescriptions = displays.enumerated().map { index, display in
-            "\(index): \(display.name) (\(Int(display.frame.width))x\(Int(display.frame.height)))\(display.isMain ? " - Main" : "")"
+            "\(index): \(display.name) (\(Int(display.visibleFrame.width))x\(Int(display.visibleFrame.height)))\(display.isMain ? " - Main" : "")"
         }.joined(separator: ", ")
         
         print("📱 Display Configuration: \(displayDescriptions)")

@@ -704,8 +704,15 @@ class WindowManager {
     func setWindowBounds(_ windowInfo: WindowInfo, bounds: CGRect, validate: Bool = true) -> Bool {
         guard checkAccessibilityPermissions() else { return false }
         
+        print("🔍 setWindowBounds DEBUG:")
+        print("   App: \(windowInfo.appName)")
+        print("   Input bounds: \(bounds)")
+        print("   Validate: \(validate)")
+        
         // Validate bounds against app constraints and screen bounds (unless disabled)
         let finalBounds = validate ? validateWindowBounds(bounds, for: windowInfo.appName) : bounds
+        print("   Final bounds: \(finalBounds)")
+        print("   Bounds changed by validation: \(bounds != finalBounds)")
         
         let positionValue = AXValueCreate(.cgPoint, withUnsafePointer(to: finalBounds.origin) { $0 })
         let sizeValue = AXValueCreate(.cgSize, withUnsafePointer(to: finalBounds.size) { $0 })
@@ -713,7 +720,13 @@ class WindowManager {
         let positionResult = AXUIElementSetAttributeValue(windowInfo.windowRef, kAXPositionAttribute as CFString, positionValue!)
         let sizeResult = AXUIElementSetAttributeValue(windowInfo.windowRef, kAXSizeAttribute as CFString, sizeValue!)
         
-        return positionResult == .success && sizeResult == .success
+        print("   Position result: \(positionResult == .success ? "SUCCESS" : "FAILED (\(positionResult))")")
+        print("   Size result: \(sizeResult == .success ? "SUCCESS" : "FAILED (\(sizeResult))")")
+        
+        let overallSuccess = positionResult == .success && sizeResult == .success
+        print("   Overall success: \(overallSuccess)")
+        
+        return overallSuccess
     }
     
     func focusWindow(_ windowInfo: WindowInfo) -> Bool {
