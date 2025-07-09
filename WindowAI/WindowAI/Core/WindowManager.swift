@@ -207,32 +207,25 @@ class WindowManager {
                 return false
             }
             
-            // Skip true system apps, but allow user-manageable Apple apps
-            let allowedAppleApps = [
-                "com.apple.Terminal",
-                "com.apple.TextEdit", 
-                "com.apple.Preview",
-                "com.apple.QuickTimePlayerX",
-                "com.apple.Calculator",
-                "com.apple.Notes",
-                "com.apple.Music",
-                "com.apple.TV",
-                "com.apple.Photos",
-                "com.apple.Maps",
-                "com.apple.Calendar",
-                "com.apple.Contacts",
-                "com.apple.Mail",
-                "com.apple.FaceTime",
-                "com.apple.Messages"
+            // Skip true system processes - use behavior-based filtering instead of whitelist
+            let systemProcesses = [
+                "com.apple.dock",
+                "com.apple.systemuiserver", 
+                "com.apple.windowserver",
+                "com.apple.loginwindow",
+                "com.apple.controlcenter",
+                "com.apple.notificationcenterui",
+                "com.apple.spotlight",
+                "com.apple.screensaver.engine"
             ]
             
-            let isSystemApp = bundleId.hasPrefix("com.apple.") && !allowedAppleApps.contains(bundleId)
+            let isSystemProcess = systemProcesses.contains(where: { bundleId.hasPrefix($0) })
             let isBackgroundProcess = !["Dock", "Finder", "SystemUIServer", "WindowServer"].contains(appName) &&
                                     !bundleId.contains("com.apple.dock") &&
                                     !bundleId.contains("com.apple.systemuiserver")
             
             return app.activationPolicy == .regular &&
-                   !isSystemApp &&
+                   !isSystemProcess &&
                    isBackgroundProcess
         }
         .prefix(20) // Increased limit to accommodate more Apple apps
