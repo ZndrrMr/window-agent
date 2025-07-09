@@ -527,47 +527,50 @@ class GeminiLLMService {
         - Ensure every window is accessible and properly positioned for its function
         - Don't limit yourself to just a few "key" windows - arrange the complete workspace
         
-        INTELLIGENT TOOL SELECTION:
-        Choose the right tool based on what the user actually needs:
+        UNIFIED TOOL USAGE:
+        Use `flexible_position` for ALL window operations:
         
-        **For precise control and optimization:**
-        - Use `flexible_position` when you need exact positioning with specific percentages/pixels
-        - Multiple `flexible_position` calls create coordinated layouts with perfect screen coverage
+        **For window positioning:**
+        - Use `flexible_position` with precise percentage coordinates (e.g., x_position: "25", y_position: "10")
+        - Set width and height as percentages (e.g., width: "50", height: "75")
         - Control layer/z-index for proper window stacking (0=back, 3=front)
+        - Set focus: true for the primary window the user should be working in
         
-        **For simple operations:**
-        - Use `resize_window` for basic sizing
-        - Use `snap_window` for standard positions (left/right/corners)
+        **For window lifecycle (opening, minimizing, focusing):**
+        - Use `flexible_position` with lifecycle parameters:
+          - open: true → Launch app if not running
+          - minimize: true → Minimize window, minimize: false → Ensure not minimized
+          - focus: true → Focus window (brings to front, activates app)
+          - restore: true → Restore/unminimize window before positioning
+        
+        **For simple operations like "focus Safari":**
+        - Use `flexible_position` with just app_name and focus: true
+        - No positioning coordinates needed for focus-only operations
         
         **For complex arrangements:**
         - Use multiple `flexible_position` calls to create coordinated layouts
         - Use archetype behavior patterns to guide intelligent positioning
+        - Every window that needs to be arranged should get its own `flexible_position` call
         
         **Decision criteria:**
-        - If layout analysis shows specific problems → use precision tools to fix them
-        - If user wants "maximize coverage" → use multiple `flexible_position` calls
-        - If user wants specific positions → use `flexible_position`
-        - If user wants generic "arrange" → use multiple precision tools for coordinated layouts
+        - Always use `flexible_position` for any window operation
+        - Use coordinates when positioning is needed
+        - Use lifecycle parameters when opening/minimizing/focusing is needed
+        - Use `close_app` only when user specifically wants to close/quit an app
 
         **CRITICAL EXAMPLES TO BASE ACTIONS OFF OF:**
 
         User prompt:
-        "schedule"
+        "code"
         
         Expected output:
-        "toolCalls":["flexible_position(\n    app_name: \"Arc\",\n    x_position: \"13.8\",\n    y_position: \"2.8\",\n    width: \"72.7\",\n    height: \"97.2\",\n    layer: \"2\",\n    focus: \"false\"\n)","flexible_position(\n    app_name: \"Calendar\",\n    x_position: \"-0.0\",\n    y_position: \"2.8\",\n    width: \"61.1\",\n    height: \"97.2\",\n    layer: \"1\",\n    focus: \"false\"\n)"shce,"flexible_position(\n    app_name: \"TimeFinder\",\n    x_position: \"72.2\",\n    y_position: \"2.8\",\n    width: \"27.8\",\n    height: \"97.2\",\n    layer: \"-1\",\n    focus: \"false\"\n)"]
+        "toolCalls":["flexible_position(\n    app_name: \"Terminal\",\n    x_position: \"66.7\",\n    y_position: \"2.8\",\n    width: \"33.3\",\n    height: \"97.2\",\n    layer: \"3\",\n    focus: \"true\"\n)","flexible_position(\n    app_name: \"Xcode\",\n    x_position: \"-0.0\",\n    y_position: \"2.8\",\n    width: \"66.7\",\n    height: \"88.3\",\n    layer: \"2\",\n    focus: \"false\"\n)","flexible_position(\n    app_name: \"Arc\",\n    x_position: \"0.0\",\n    y_position: \"12.6\",\n    width: \"66.7\",\n    height: \"87.4\",\n    layer: \"1\",\n    focus: \"false\"\n)"]
         
         User prompt:
-        "design"
+        "move terminal bigger"
         
         Expected output:
-        "toolCalls":["flexible_position(\n    app_name: \"Arc\",\n    x_position: \"-0.0\",\n    y_position: \"2.8\",\n    width: \"76.7\",\n    height: \"79.8\",\n    layer: \"2\",\n    focus: \"false\"\n)","flexible_position(\n    app_name: \"Music\",\n    x_position: \"0.0\",\n    y_position: \"35.6\",\n    width: \"68.1\",\n    height: \"64.4\",\n    layer: \"1\",\n    focus: \"false\"\n)","flexible_position(\n    app_name: \"Figma\",\n    x_position: \"13.3\",\n    y_position: \"2.8\",\n    width: \"86.7\",\n    height: \"97.2\",\n    layer: \"0\",\n    focus: \"false\"\n)"]
-        
-        User prompt:
-        "web"
-        
-        Expected output:
-        "toolCalls":["flexible_position(\n    app_name: \"Arc\",\n    x_position: \"11.5\",\n    y_position: \"2.8\",\n    width: \"76.7\",\n    height: \"97.2\",\n    layer: \"2\",\n    focus: \"false\"\n)","flexible_position(\n    app_name: \"Claude\",\n    x_position: \"0.0\",\n    y_position: \"51.6\",\n    width: \"28.3\",\n    height: \"48.4\",\n    layer: \"1\",\n    focus: \"false\"\n)","flexible_position(\n    app_name: \"Music\",\n    x_position: \"31.9\",\n    y_position: \"35.6\",\n    width: \"68.1\",\n    height: \"64.4\",\n    layer: \"0\",\n    focus: \"false\"\n)","flexible_position(\n    app_name: \"Home\",\n    x_position: \"0.1\",\n    y_position: \"2.8\",\n    width: \"42.4\",\n    height: \"66.2\",\n    layer: \"-1\",\n    focus: \"false\"\n)"]
+        "toolCalls":["flexible_position(\n    app_name: \"Terminal\",\n    x_position: \"60.0\",\n    y_position: \"2.8\",\n    width: \"40.0\",\n    height: \"97.2\",\n    layer: \"3\",\n    focus: \"true\"\n)","flexible_position(\n    app_name: \"Xcode\",\n    x_position: \"0.0\",\n    y_position: \"2.8\",\n    width: \"60.0\",\n    height: \"88.3\",\n    layer: \"2\",\n    focus: \"false\"\n)","flexible_position(\n    app_name: \"Arc\",\n    x_position: \"0.0\",\n    y_position: \"12.6\",\n    width: \"60.0\",\n    height: \"87.4\",\n    layer: \"1\",\n    focus: \"false\"\n)"]
         
         User prompt:
         "research"
@@ -576,10 +579,16 @@ class GeminiLLMService {
         "toolCalls":["flexible_position(\n    app_name: \"Arc\",\n    x_position: \"-0.0\",\n    y_position: \"2.8\",\n    width: \"49.9\",\n    height: \"97.2\",\n    layer: \"2\",\n    focus: \"false\"\n)","flexible_position(\n    app_name: \"Claude\",\n    x_position: \"50.0\",\n    y_position: \"15.8\",\n    width: \"50.0\",\n    height: \"84.2\",\n    layer: \"1\",\n    focus: \"false\"\n)","flexible_position(\n    app_name: \"Notion\",\n    x_position: \"50.0\",\n    y_position: \"2.8\",\n    width: \"50.0\",\n    height: \"84.6\",\n    layer: \"0\",\n    focus: \"false\"\n)"]
         
         User prompt:
-        "code"
+        "focus Safari"
         
         Expected output:
-        "toolCalls":["flexible_position(\n    app_name: \"Terminal\",\n    x_position: \"66.7\",\n    y_position: \"2.8\",\n    width: \"33.3\",\n    height: \"97.2\",\n    layer: \"3\",\n    focus: \"true\"\n)","flexible_position(\n    app_name: \"Xcode\",\n    x_position: \"-0.0\",\n    y_position: \"2.8\",\n    width: \"66.7\",\n    height: \"88.3\",\n    layer: \"2\",\n    focus: \"false\"\n)","flexible_position(\n    app_name: \"Arc\",\n    x_position: \"0.0\",\n    y_position: \"12.6\",\n    width: \"66.7\",\n    height: \"87.4\",\n    layer: \"1\",\n    focus: \"false\"\n)","flexible_position(\n    app_name: \"Finder\",\n    x_position: \"0.0\",\n    y_position: \"0.0\",\n    width: \"100.0\",\n    height: \"100.0\",\n    layer: \"0\",\n    focus: \"false\"\n)"]
+        "toolCalls":["flexible_position(\n    app_name: \"Safari\",\n    focus: \"true\"\n)"]
+        
+        User prompt:
+        "minimize all windows"
+        
+        Expected output:
+        "toolCalls":["flexible_position(\n    app_name: \"Terminal\",\n    minimize: \"true\"\n)","flexible_position(\n    app_name: \"Xcode\",\n    minimize: \"true\"\n)","flexible_position(\n    app_name: \"Arc\",\n    minimize: \"true\"\n)"]
         
         NEVER:
         - Assume fixed positions for app types

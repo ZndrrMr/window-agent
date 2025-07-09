@@ -84,14 +84,7 @@ struct AnyCodable: Codable {
 class WindowManagementTools {
     
     static let allTools: [LLMTool] = [
-        resizeWindowTool,
-        openAppTool,
         closeAppTool,
-        focusWindowTool,
-        snapWindowTool,
-        minimizeWindowTool,
-        maximizeWindowTool,
-        tileWindowsTool,
         flexiblePositionTool
     ]
     
@@ -300,46 +293,66 @@ class WindowManagementTools {
         )
     )
     
-    // Flexible positioning with pixel-level precision and layer control
+    // Unified window management tool - handles all window operations
     static let flexiblePositionTool = LLMTool(
         name: "flexible_position",
-        description: "Position and size a window with precise percentage or pixel values and control stacking order. Use this for coordinated multi-window arrangements.",
+        description: "Unified window management tool that handles all window operations: positioning, opening, closing, minimizing, maximizing, and focusing. Use this for ALL window operations.",
         input_schema: LLMTool.ToolInputSchema(
             properties: [
                 "app_name": LLMTool.ToolInputSchema.PropertyDefinition(
                     type: "string",
-                    description: "Name of the application to position"
+                    description: "Name of the application to control"
                 ),
+                
+                // Window lifecycle operations
+                "open": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "boolean",
+                    description: "Whether to open/launch the app if it's not running (default: false)"
+                ),
+                "minimize": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "boolean",
+                    description: "Whether to minimize the window (true) or ensure it's not minimized (false). If omitted, leaves minimize state unchanged"
+                ),
+                "restore": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "boolean",
+                    description: "Whether to restore/unminimize the window before other operations (default: false)"
+                ),
+                
+                // Position and size (optional - omit for non-positioning operations)
                 "x_position": LLMTool.ToolInputSchema.PropertyDefinition(
                     type: "string",
-                    description: "X position as percentage (e.g., '25' for 25% from left) or pixels (e.g., '300px')"
+                    description: "X position as percentage (e.g., '25' for 25% from left) or pixels (e.g., '300px'). Optional for minimize/focus operations"
                 ),
                 "y_position": LLMTool.ToolInputSchema.PropertyDefinition(
                     type: "string",
-                    description: "Y position as percentage (e.g., '10' for 10% from top) or pixels (e.g., '50px')"
+                    description: "Y position as percentage (e.g., '10' for 10% from top) or pixels (e.g., '50px'). Optional for minimize/focus operations"
                 ),
                 "width": LLMTool.ToolInputSchema.PropertyDefinition(
                     type: "string",
-                    description: "Width as percentage (e.g., '65' for 65% of screen) or pixels (e.g., '800px')"
+                    description: "Width as percentage (e.g., '65' for 65% of screen) or pixels (e.g., '800px'). Optional for minimize/focus operations"
                 ),
                 "height": LLMTool.ToolInputSchema.PropertyDefinition(
                     type: "string",
-                    description: "Height as percentage (e.g., '75' for 75% of screen) or pixels (e.g., '600px')"
+                    description: "Height as percentage (e.g., '75' for 75% of screen) or pixels (e.g., '600px'). Optional for minimize/focus operations"
+                ),
+                
+                // Focus and layering
+                "focus": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "boolean",
+                    description: "Whether to focus this window (brings to front, activates app, unminimizes if needed). Default: false"
                 ),
                 "layer": LLMTool.ToolInputSchema.PropertyDefinition(
                     type: "integer",
-                    description: "Window stacking layer/z-index: 0=bottom/corner, 1=side columns, 2=cascade layers, 3=primary/focused"
+                    description: "Window stacking layer/z-index: 0=bottom/corner, 1=side columns, 2=cascade layers, 3=primary/focused. Optional."
                 ),
-                "focus": LLMTool.ToolInputSchema.PropertyDefinition(
-                    type: "boolean",
-                    description: "Whether to focus this window after positioning (true for primary window)"
-                ),
+                
+                // Display targeting
                 "display": LLMTool.ToolInputSchema.PropertyDefinition(
                     type: "integer",
                     description: "Display index (0 for main display, 1 for secondary, etc.). Optional."
                 )
             ],
-            required: ["app_name", "x_position", "y_position", "width", "height", "layer"]
+            required: ["app_name"]
         )
     )
 }
@@ -390,22 +403,8 @@ class ToolToCommandConverter {
         }
         
         switch toolUse.name {
-        case "resize_window":
-            return convertResizeWindow(input)
-        case "open_app":
-            return convertOpenApp(input)
         case "close_app":
             return convertCloseApp(input)
-        case "focus_window":
-            return convertFocusWindow(input)
-        case "snap_window":
-            return convertSnapWindow(input)
-        case "minimize_window":
-            return convertMinimizeWindow(input)
-        case "maximize_window":
-            return convertMaximizeWindow(input)
-        case "tile_windows":
-            return convertTileWindows(input)
         case "flexible_position":
             return convertFlexiblePosition(input)
         default:
@@ -599,82 +598,130 @@ class ToolToCommandConverter {
     }
     
     private static func convertFlexiblePosition(_ input: [String: Any]) -> WindowCommand? {
-        guard let appName = input["app_name"] as? String,
-              let xPos = input["x_position"] as? String,
-              let yPos = input["y_position"] as? String,
-              let width = input["width"] as? String,
-              let height = input["height"] as? String else {
+        guard let appName = input["app_name"] as? String else {
             return nil
         }
         
         let display = extractDisplay(from: input)
-        
-        // Get the correct display bounds based on the display parameter
-        let screenBounds: CGRect
-        if let displayIndex = display, displayIndex >= 0 && displayIndex < NSScreen.screens.count {
-            screenBounds = NSScreen.screens[displayIndex].visibleFrame
-            print("🖥️ Using display \(displayIndex) bounds: \(screenBounds)")
-        } else {
-            screenBounds = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1920, height: 1080)
-            print("🖥️ Using main display bounds: \(screenBounds)")
-        }
-        
-        // Parse position values
-        let x: Double
-        let y: Double
-        
-        if xPos.hasSuffix("px") {
-            x = Double(xPos.dropLast(2)) ?? 0
-        } else {
-            let percentage = parsePercentageValue(xPos)
-            x = screenBounds.width * (percentage / 100.0)
-        }
-        
-        if yPos.hasSuffix("px") {
-            y = Double(yPos.dropLast(2)) ?? 0
-        } else {
-            let percentage = parsePercentageValue(yPos)
-            y = screenBounds.height * (percentage / 100.0)
-        }
-        
-        // Parse size values
-        let w: Double
-        let h: Double
-        
-        if width.hasSuffix("px") {
-            w = Double(width.dropLast(2)) ?? 0
-        } else {
-            let percentage = parsePercentageValue(width)
-            w = screenBounds.width * (percentage / 100.0)
-        }
-        
-        if height.hasSuffix("px") {
-            h = Double(height.dropLast(2)) ?? 0
-        } else {
-            let percentage = parsePercentageValue(height)
-            h = screenBounds.height * (percentage / 100.0)
-        }
-        
-        // Handle layer and focus parameters
         var parameters: [String: String] = [:]
         
-        if let layer = input["layer"] as? Int {
-            parameters["layer"] = String(layer)
+        // Handle lifecycle operations
+        if let open = input["open"] as? Bool {
+            parameters["open"] = String(open)
+        }
+        
+        if let minimize = input["minimize"] as? Bool {
+            parameters["minimize"] = String(minimize)
+        }
+        
+        if let restore = input["restore"] as? Bool {
+            parameters["restore"] = String(restore)
         }
         
         if let focus = input["focus"] as? Bool {
             parameters["focus"] = String(focus)
         }
         
-        return WindowCommand(
-            action: .move,
-            target: appName,
-            position: .precise,
-            size: .precise,
-            customSize: CGSize(width: w, height: h),
-            customPosition: CGPoint(x: x, y: y),
-            display: display,
-            parameters: parameters.isEmpty ? nil : parameters
-        )
+        if let layer = input["layer"] as? Int {
+            parameters["layer"] = String(layer)
+        }
+        
+        // Check if this is a positioning operation
+        if let xPos = input["x_position"] as? String,
+           let yPos = input["y_position"] as? String,
+           let width = input["width"] as? String,
+           let height = input["height"] as? String {
+            
+            // Get the correct display bounds based on the display parameter
+            let screenBounds: CGRect
+            if let displayIndex = display, displayIndex >= 0 && displayIndex < NSScreen.screens.count {
+                screenBounds = NSScreen.screens[displayIndex].visibleFrame
+                print("🖥️ Using display \(displayIndex) bounds: \(screenBounds)")
+            } else {
+                screenBounds = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1920, height: 1080)
+                print("🖥️ Using main display bounds: \(screenBounds)")
+            }
+            
+            // Parse position values
+            let x: Double
+            let y: Double
+            
+            if xPos.hasSuffix("px") {
+                x = Double(xPos.dropLast(2)) ?? 0
+            } else {
+                let percentage = parsePercentageValue(xPos)
+                x = screenBounds.width * (percentage / 100.0)
+            }
+            
+            if yPos.hasSuffix("px") {
+                y = Double(yPos.dropLast(2)) ?? 0
+            } else {
+                let percentage = parsePercentageValue(yPos)
+                y = screenBounds.height * (percentage / 100.0)
+            }
+            
+            // Parse size values
+            let w: Double
+            let h: Double
+            
+            if width.hasSuffix("px") {
+                w = Double(width.dropLast(2)) ?? 0
+            } else {
+                let percentage = parsePercentageValue(width)
+                w = screenBounds.width * (percentage / 100.0)
+            }
+            
+            if height.hasSuffix("px") {
+                h = Double(height.dropLast(2)) ?? 0
+            } else {
+                let percentage = parsePercentageValue(height)
+                h = screenBounds.height * (percentage / 100.0)
+            }
+            
+            // This is a positioning command with flexible_position parameters
+            return WindowCommand(
+                action: .move,
+                target: appName,
+                position: .precise,
+                size: .precise,
+                customSize: CGSize(width: w, height: h),
+                customPosition: CGPoint(x: x, y: y),
+                display: display,
+                parameters: parameters.isEmpty ? nil : parameters
+            )
+        } else {
+            // This is a non-positioning command (focus, minimize, etc.)
+            // Determine action based on parameters
+            if let minimizeStr = parameters["minimize"], minimizeStr == "true" {
+                return WindowCommand(
+                    action: .minimize,
+                    target: appName,
+                    display: display,
+                    parameters: parameters
+                )
+            } else if let openStr = parameters["open"], openStr == "true" {
+                return WindowCommand(
+                    action: .open,
+                    target: appName,
+                    display: display,
+                    parameters: parameters
+                )
+            } else if let focusStr = parameters["focus"], focusStr == "true" {
+                return WindowCommand(
+                    action: .focus,
+                    target: appName,
+                    display: display,
+                    parameters: parameters
+                )
+            } else {
+                // Default to focus if no specific action specified
+                return WindowCommand(
+                    action: .focus,
+                    target: appName,
+                    display: display,
+                    parameters: parameters
+                )
+            }
+        }
     }
 }

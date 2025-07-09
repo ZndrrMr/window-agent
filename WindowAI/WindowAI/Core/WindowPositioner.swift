@@ -158,8 +158,50 @@ class WindowPositioner {
     
     // MARK: - Command Implementations
     private func moveWindow(_ command: WindowCommand) -> CommandResult {
+        // Handle lifecycle operations first
+        if let parameters = command.parameters {
+            // Handle opening app if needed
+            if let openParam = parameters["open"], openParam.lowercased() == "true" {
+                let openResult = openApp(command)
+                if !openResult.success {
+                    return openResult
+                }
+                // Wait for app to launch before continuing
+                Thread.sleep(forTimeInterval: 1.0)
+            }
+        }
+        
         guard let windows = getTargetWindows(command.target), let window = windows.first else {
             return CommandResult(success: false, message: "Could not find window for '\(command.target)'", command: command)
+        }
+        
+        // Handle lifecycle operations on existing window
+        if let parameters = command.parameters {
+            // Handle restore/unminimize before positioning
+            if let restoreParam = parameters["restore"], restoreParam.lowercased() == "true" {
+                if windowManager.isWindowMinimized(window) {
+                    print("🔄 Restoring \(command.target) before positioning")
+                    _ = windowManager.restoreWindow(window)
+                    Thread.sleep(forTimeInterval: 0.1)
+                }
+            }
+            
+            // Handle minimize operation
+            if let minimizeParam = parameters["minimize"] {
+                if minimizeParam.lowercased() == "true" {
+                    print("📦 Minimizing \(command.target)")
+                    let success = windowManager.minimizeWindow(window)
+                    let message = success ? "Minimized \(command.target)" : "Failed to minimize \(command.target)"
+                    return CommandResult(success: success, message: message, command: command)
+                } else if minimizeParam.lowercased() == "false" {
+                    // Ensure window is not minimized
+                    if windowManager.isWindowMinimized(window) {
+                        print("🔄 Unminimizing \(command.target)")
+                        _ = windowManager.restoreWindow(window)
+                        Thread.sleep(forTimeInterval: 0.1)
+                    }
+                }
+            }
         }
         
         let displayIndex = command.display ?? 0
@@ -174,6 +216,15 @@ class WindowPositioner {
             let size = command.customSize ?? window.bounds.size
             position = calculatePosition(windowPosition, size: size, on: displayIndex)
         } else {
+            // If no positioning specified, this might be a focus-only or lifecycle-only command
+            if let parameters = command.parameters {
+                if let focusParam = parameters["focus"], focusParam.lowercased() == "true" {
+                    // Focus-only command
+                    let success = windowManager.focusWindow(window)
+                    let message = success ? "Focused \(command.target)" : "Failed to focus \(command.target)"
+                    return CommandResult(success: success, message: message, command: command)
+                }
+            }
             return CommandResult(success: false, message: "No position specified", command: command)
         }
         
@@ -196,6 +247,18 @@ class WindowPositioner {
             )
             
             let success = windowManager.setWindowBounds(window, bounds: bounds)
+            
+            // Handle focus after positioning
+            if let parameters = command.parameters,
+               let focusParam = parameters["focus"],
+               focusParam.lowercased() == "true" {
+                // Small delay to ensure positioning is complete
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    let focusSuccess = self.windowManager.focusWindow(window)
+                    print("🎯 Focus \(focusSuccess ? "set" : "failed") for \(command.target)")
+                }
+            }
+            
             let message = success ? "Positioned \(command.target) at (\(Int(position.x)), \(Int(position.y))) with size \(Int(customSize.width))x\(Int(customSize.height))" : "Failed to position \(command.target)"
             return CommandResult(success: success, message: message, command: command)
         }
@@ -210,6 +273,18 @@ class WindowPositioner {
         )
         
         let success = windowManager.moveWindow(window, to: position)
+        
+        // Handle focus after positioning
+        if let parameters = command.parameters,
+           let focusParam = parameters["focus"],
+           focusParam.lowercased() == "true" {
+            // Small delay to ensure positioning is complete
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                let focusSuccess = self.windowManager.focusWindow(window)
+                print("🎯 Focus \(focusSuccess ? "set" : "failed") for \(command.target)")
+            }
+        }
+        
         let message = success ? "Moved \(command.target) to \(position)" : "Failed to move \(command.target)"
         
         return CommandResult(success: success, message: message, command: command)
