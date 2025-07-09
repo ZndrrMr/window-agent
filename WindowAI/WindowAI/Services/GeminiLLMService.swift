@@ -548,53 +548,41 @@ class GeminiLLMService {
         - If user wants "maximize coverage" → use multiple `flexible_position` calls
         - If user wants specific positions → use `flexible_position`
         - If user wants generic "arrange" → use multiple precision tools for coordinated layouts
-        
-        **PRECISION TOOL EXAMPLES:**
-        
-        For maximum screen coverage with intelligent arrangement:
-        ```
-        flexible_position(app_name: "Xcode", x_position: "0", y_position: "0", width: "65", height: "100", layer: 2, focus: true)
-        flexible_position(app_name: "Terminal", x_position: "65", y_position: "0", width: "35", height: "60", layer: 1, focus: false)  
-        flexible_position(app_name: "Arc", x_position: "65", y_position: "60", width: "35", height: "40", layer: 1, focus: false)
-        ```
-        
-        For fixing specific layout problems:
-        ```
-        // If Terminal is too narrow (only 20% width):
-        resize_window(app_name: "Terminal", size: "custom", custom_width: "35")
-        
-        // If Arc is positioned off-screen:
-        snap_window(app_name: "Arc", position: "right")
-        
-        // If windows have poor coverage (only 60%):
-        flexible_position(app_name: "MainApp", x_position: "0", y_position: "0", width: "70", height: "100", layer: 3)
-        flexible_position(app_name: "SideApp", x_position: "70", y_position: "0", width: "30", height: "100", layer: 2)
-        ```
-        
-        **PREFER PRECISION OVER GENERIC:**
-        - When you can calculate exact positions for better coverage → use `flexible_position`
-        - When you see specific sizing problems → use `resize_window` with custom percentages
-        - When you see positioning problems → use `flexible_position`
-        - Use multiple `flexible_position` calls to create intelligent cascaded arrangements
-        
-        **USER EXAMPLE OUTPUTS:**
-        "I want to code"
-        Terminal: x=65% y=3% w=34% h=97% (494x875)
-        Xcode: x=-0% y=3% w=65% h=76% (940x688)
-        Arc: x=0% y=15% w=60% h=85% (864x761)
-        Claude: x=44% y=24% w=45% h=76% (643x686)
+
+        **CRITICAL EXAMPLES TO BASE ACTIONS OFF OF:**
+
+        User prompt:
+        "schedule"
         
         Expected output:
-        ```
-        flexible_position(app_name: "Xcode", x_position: "0", y_position: "0", width: "65", height: "100", layer: "3", focus: "true")
-        flexible_position(app_name: "Terminal", x_position: "65", y_position: "0", width: "35", height: "50", layer: "2", focus: "false")
-        flexible_position(app_name: "Arc", x_position: "15", y_position: "20", width: "60", height: "75", layer: "1", focus: "false")
-        flexible_position(app_name: "Claude", x_position: "25", y_position: "25", width: "50", height: "70", layer: "0", focus: "false")
-        ```
+        "toolCalls":["flexible_position(\n    app_name: \"Arc\",\n    x_position: \"13.8\",\n    y_position: \"2.8\",\n    width: \"72.7\",\n    height: \"97.2\",\n    layer: \"2\",\n    focus: \"false\"\n)","flexible_position(\n    app_name: \"Calendar\",\n    x_position: \"-0.0\",\n    y_position: \"2.8\",\n    width: \"61.1\",\n    height: \"97.2\",\n    layer: \"1\",\n    focus: \"false\"\n)"shce,"flexible_position(\n    app_name: \"TimeFinder\",\n    x_position: \"72.2\",\n    y_position: \"2.8\",\n    width: \"27.8\",\n    height: \"97.2\",\n    layer: \"-1\",\n    focus: \"false\"\n)"]
+        
+        User prompt:
+        "design"
+        
+        Expected output:
+        "toolCalls":["flexible_position(\n    app_name: \"Arc\",\n    x_position: \"-0.0\",\n    y_position: \"2.8\",\n    width: \"76.7\",\n    height: \"79.8\",\n    layer: \"2\",\n    focus: \"false\"\n)","flexible_position(\n    app_name: \"Music\",\n    x_position: \"0.0\",\n    y_position: \"35.6\",\n    width: \"68.1\",\n    height: \"64.4\",\n    layer: \"1\",\n    focus: \"false\"\n)","flexible_position(\n    app_name: \"Figma\",\n    x_position: \"13.3\",\n    y_position: \"2.8\",\n    width: \"86.7\",\n    height: \"97.2\",\n    layer: \"0\",\n    focus: \"false\"\n)"]
+        
+        User prompt:
+        "web"
+        
+        Expected output:
+        "toolCalls":["flexible_position(\n    app_name: \"Arc\",\n    x_position: \"11.5\",\n    y_position: \"2.8\",\n    width: \"76.7\",\n    height: \"97.2\",\n    layer: \"2\",\n    focus: \"false\"\n)","flexible_position(\n    app_name: \"Claude\",\n    x_position: \"0.0\",\n    y_position: \"51.6\",\n    width: \"28.3\",\n    height: \"48.4\",\n    layer: \"1\",\n    focus: \"false\"\n)","flexible_position(\n    app_name: \"Music\",\n    x_position: \"31.9\",\n    y_position: \"35.6\",\n    width: \"68.1\",\n    height: \"64.4\",\n    layer: \"0\",\n    focus: \"false\"\n)","flexible_position(\n    app_name: \"Home\",\n    x_position: \"0.1\",\n    y_position: \"2.8\",\n    width: \"42.4\",\n    height: \"66.2\",\n    layer: \"-1\",\n    focus: \"false\"\n)"]
+        
+        User prompt:
+        "research"
+        
+        Expected output:
+        "toolCalls":["flexible_position(\n    app_name: \"Arc\",\n    x_position: \"-0.0\",\n    y_position: \"2.8\",\n    width: \"49.9\",\n    height: \"97.2\",\n    layer: \"2\",\n    focus: \"false\"\n)","flexible_position(\n    app_name: \"Claude\",\n    x_position: \"50.0\",\n    y_position: \"15.8\",\n    width: \"50.0\",\n    height: \"84.2\",\n    layer: \"1\",\n    focus: \"false\"\n)","flexible_position(\n    app_name: \"Notion\",\n    x_position: \"50.0\",\n    y_position: \"2.8\",\n    width: \"50.0\",\n    height: \"84.6\",\n    layer: \"0\",\n    focus: \"false\"\n)"]
+        
+        User prompt:
+        "code"
+        
+        Expected output:
+        "toolCalls":["flexible_position(\n    app_name: \"Terminal\",\n    x_position: \"66.7\",\n    y_position: \"2.8\",\n    width: \"33.3\",\n    height: \"97.2\",\n    layer: \"3\",\n    focus: \"true\"\n)","flexible_position(\n    app_name: \"Xcode\",\n    x_position: \"-0.0\",\n    y_position: \"2.8\",\n    width: \"66.7\",\n    height: \"88.3\",\n    layer: \"2\",\n    focus: \"false\"\n)","flexible_position(\n    app_name: \"Arc\",\n    x_position: \"0.0\",\n    y_position: \"12.6\",\n    width: \"66.7\",\n    height: \"87.4\",\n    layer: \"1\",\n    focus: \"false\"\n)","flexible_position(\n    app_name: \"Finder\",\n    x_position: \"0.0\",\n    y_position: \"0.0\",\n    width: \"100.0\",\n    height: \"100.0\",\n    layer: \"0\",\n    focus: \"false\"\n)"]
         
         NEVER:
         - Assume fixed positions for app types
-        - Change position when only size is requested
         - Suggest apps the user doesn't use
         - Limit yourself to predetermined layouts
         """

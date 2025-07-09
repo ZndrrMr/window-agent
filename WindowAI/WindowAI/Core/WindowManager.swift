@@ -1030,7 +1030,7 @@ class WindowManager {
 }
 
 // MARK: - Display Info Structure
-struct DisplayInfo {
+struct DisplayInfo: Codable {
     let index: Int
     let name: String
     let frame: CGRect

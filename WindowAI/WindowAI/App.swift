@@ -1,6 +1,26 @@
 import Cocoa
 import SwiftUI
 
+// MARK: - Layout Capture Data Structure
+struct CaptureData: Codable {
+    let timestamp: Date
+    let windowCount: Int
+    let toolCalls: [String]
+    var userCommand: String
+    
+    // Generate few-shot prompting format
+    func toFewShotExample() -> String {
+        return """
+        {
+            "user_command": "\(userCommand)",
+            "tool_calls": [
+        \(toolCalls.map { "        \($0)" }.joined(separator: ",\n"))
+            ]
+        }
+        """
+    }
+}
+
 class WindowAIController: HotkeyManagerDelegate, LLMServiceDelegate {
     
     // MARK: - Core Components
@@ -41,14 +61,16 @@ class WindowAIController: HotkeyManagerDelegate, LLMServiceDelegate {
         
         // DEVELOPMENT: Run Finder detection tests and performance tests
         #if DEBUG
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-            FinderDetection.runTests()
-        }
+        // Disabled automatic tests to prevent interference with normal usage
+        // Uncomment these lines if you need to run performance tests manually
         
-        // CRITICAL: Run performance tests to ensure <0.1s requirement
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
-            XRayWindowManager.shared.runPerformanceTests()
-        }
+        // DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+        //     FinderDetection.runTests()
+        // }
+        
+        // DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+        //     XRayWindowManager.shared.runPerformanceTests()
+        // }
         #endif
         
         // DEVELOPMENT: Uncomment to run minimal Gemini test automatically
@@ -162,6 +184,12 @@ class WindowAIController: HotkeyManagerDelegate, LLMServiceDelegate {
         
         onboardingWindow?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+    
+    func captureCurrentLayout() {
+        Task {
+            await generateLayoutCapture()
+        }
     }
     
     func checkAndShowOnboarding() {
@@ -502,6 +530,136 @@ extension WindowAIController {
             XRayWindowManager.shared.toggleXRayOverlay()
         }
     }
+    
+    // MARK: - Layout Capture
+    private func generateLayoutCapture() async {
+        print("🎬 Capturing current layout...")
+        
+        // Ensure X-Ray overlay is hidden before capturing (on main thread)
+        await MainActor.run {
+            XRayWindowManager.shared.hideXRayOverlay()
+        }
+        
+        // Wait a moment for any X-Ray state to clear
+        try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
+        
+        // Get all current windows
+        let allWindows = windowManager.getAllWindows()
+        let displayInfo = windowManager.getAllDisplayInfo()
+        
+        // Filter out system windows and focus on user apps
+        let userWindows = allWindows.filter { window in
+            !window.appName.contains("WindowAI") && 
+            !window.appName.contains("System") &&
+            !window.appName.contains("Dock") &&
+            !window.title.isEmpty
+        }
+        
+        print("📱 Found \(userWindows.count) user windows to capture")
+        
+        // Generate Gemini tool calls for each window
+        var toolCalls: [String] = []
+        let mainDisplay = displayInfo.first ?? DisplayInfo(
+            index: 0,
+            name: "Main Display",
+            frame: CGRect(x: 0, y: 0, width: 1920, height: 1080),
+            visibleFrame: CGRect(x: 0, y: 0, width: 1920, height: 1080),
+            isMain: true,
+            backingScaleFactor: 1.0
+        )
+        
+        for (index, window) in userWindows.enumerated() {
+            // Convert to percentage coordinates
+            let xPercent = (window.bounds.origin.x / mainDisplay.frame.width) * 100
+            let yPercent = (window.bounds.origin.y / mainDisplay.frame.height) * 100
+            let widthPercent = (window.bounds.width / mainDisplay.frame.width) * 100
+            let heightPercent = (window.bounds.height / mainDisplay.frame.height) * 100
+            
+            // Generate tool call
+            let toolCall = """
+            flexible_position(
+                app_name: "\(window.appName)",
+                x_position: "\(String(format: "%.1f", xPercent))",
+                y_position: "\(String(format: "%.1f", yPercent))",
+                width: "\(String(format: "%.1f", widthPercent))",
+                height: "\(String(format: "%.1f", heightPercent))",
+                layer: "\(3 - index)",
+                focus: "\(index == 0 ? "true" : "false")"
+            )
+            """
+            
+            toolCalls.append(toolCall)
+        }
+        
+        // Create capture data
+        let captureData = CaptureData(
+            timestamp: Date(),
+            windowCount: userWindows.count,
+            toolCalls: toolCalls,
+            userCommand: "" // Will be filled in by user
+        )
+        
+        // Save to file
+        await saveCaptureData(captureData)
+        
+        // Show success notification on main thread
+        await MainActor.run {
+            self.showCaptureNotification(captureData)
+        }
+        
+        // Generate few-shot example format
+        print("\n🎯 FEW-SHOT EXAMPLE FORMAT:")
+        print("Copy this into your Gemini prompt:")
+        print("----------------------------------------")
+        print(captureData.toFewShotExample())
+        print("----------------------------------------\n")
+    }
+    
+    private func saveCaptureData(_ data: CaptureData) async {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
+        let timestamp = formatter.string(from: data.timestamp)
+        
+        let filename = "layout_capture_\(timestamp).json"
+        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let capturesFolder = documentsPath.appendingPathComponent("WindowAI_Captures")
+        
+        // Create captures folder if it doesn't exist
+        try? FileManager.default.createDirectory(at: capturesFolder, withIntermediateDirectories: true)
+        
+        let fileURL = capturesFolder.appendingPathComponent(filename)
+        
+        do {
+            let jsonData = try JSONEncoder().encode(data)
+            try jsonData.write(to: fileURL)
+            print("✅ Layout capture saved to: \(fileURL.path)")
+        } catch {
+            print("❌ Failed to save layout capture: \(error)")
+        }
+    }
+    
+    private func showCaptureNotification(_ data: CaptureData) {
+        let alert = NSAlert()
+        alert.messageText = "Layout Captured!"
+        alert.informativeText = """
+        Captured \(data.windowCount) windows successfully.
+        
+        The layout data has been saved to your Documents/WindowAI_Captures folder.
+        
+        You can now add a user command to describe what arrangement this represents (e.g., "I want to code", "set up for research", etc.).
+        """
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Open Captures Folder")
+        alert.alertStyle = .informational
+        
+        let response = alert.runModal()
+        if response == .alertSecondButtonReturn {
+            // Open the captures folder
+            let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            let capturesFolder = documentsPath.appendingPathComponent("WindowAI_Captures")
+            NSWorkspace.shared.open(capturesFolder)
+        }
+    }
 }
 
 // MARK: - LLMServiceDelegate
@@ -628,6 +786,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         menu.addItem(NSMenuItem(title: "Show Command Window", action: #selector(showCommandWindow), keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
+        menu.addItem(NSMenuItem(title: "Capture Current Layout", action: #selector(captureCurrentLayout), keyEquivalent: ""))
+        menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Settings...", action: #selector(showSettings), keyEquivalent: ","))
         menu.addItem(NSMenuItem(title: "About WindowAI", action: #selector(showAbout), keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
@@ -647,6 +807,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     @objc private func showAbout() {
         NSApp.orderFrontStandardAboutPanel(nil)
+    }
+    
+    @objc private func captureCurrentLayout() {
+        windowAIController?.captureCurrentLayout()
     }
     
 }

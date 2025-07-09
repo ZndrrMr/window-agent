@@ -78,11 +78,27 @@ class XRayOverlayWindow: NSWindow {
             
             // Convert from Accessibility coordinates (top-left origin) to Cocoa coordinates (bottom-left origin)
             // Adjust for this display's coordinate system
-            let convertedX = windowInfo.bounds.origin.x - screenFrame.origin.x
-            let convertedY = screenFrame.height - (windowInfo.bounds.origin.y + windowInfo.bounds.height - screenFrame.origin.y)
             
-            // Handle edge cases where coordinates might be outside screen bounds
-            // This can happen with external monitors that have negative origins
+            // Step 1: Convert global coordinates to display-local coordinates
+            let localX = windowInfo.bounds.origin.x - screenFrame.origin.x
+            let localY = windowInfo.bounds.origin.y - screenFrame.origin.y
+            
+            // DEBUG: Log coordinate conversion details
+            print("🔍 X-Ray Coordinate Debug - \(windowInfo.appName)")
+            print("   Window bounds: \(windowInfo.bounds)")
+            print("   Display frame: \(screenFrame)")
+            print("   Local coords: (\(localX), \(localY))")
+            
+            // Step 2: Convert from Accessibility coordinates (top-left origin) to Cocoa coordinates (bottom-left origin)
+            let convertedX = localX
+            // All displays use the same coordinate conversion formula
+            let convertedY = screenFrame.height - localY - windowInfo.bounds.height
+            print("   Using standard coordinate conversion formula (all displays)")
+            
+            print("   Converted: (\(convertedX), \(convertedY))")
+            print("   Position from bottom: \((screenFrame.height - convertedY) / screenFrame.height * 100)%")
+            
+            // Step 3: Handle edge cases where coordinates might be outside screen bounds
             let clampedX = max(0, min(convertedX, screenFrame.width - windowInfo.bounds.width))
             let clampedY = max(0, min(convertedY, screenFrame.height - windowInfo.bounds.height))
             
@@ -132,11 +148,16 @@ class XRayOverlayWindow: NSWindow {
         convertedFrames.reserveCapacity(displayWindows.count)
         
         for windowInfo in displayWindows {
-            let convertedX = windowInfo.bounds.origin.x - screenFrame.origin.x
-            let convertedY = screenFrame.height - (windowInfo.bounds.origin.y + windowInfo.bounds.height - screenFrame.origin.y)
+            // Step 1: Convert global coordinates to display-local coordinates
+            let localX = windowInfo.bounds.origin.x - screenFrame.origin.x
+            let localY = windowInfo.bounds.origin.y - screenFrame.origin.y
             
-            // Handle edge cases where coordinates might be outside screen bounds
-            // This can happen with external monitors that have negative origins
+            // Step 2: Convert from Accessibility coordinates (top-left origin) to Cocoa coordinates (bottom-left origin)
+            let convertedX = localX
+            // All displays use the same coordinate conversion formula
+            let convertedY = screenFrame.height - localY - windowInfo.bounds.height
+            
+            // Step 3: Handle edge cases where coordinates might be outside screen bounds
             let clampedX = max(0, min(convertedX, screenFrame.width - windowInfo.bounds.width))
             let clampedY = max(0, min(convertedY, screenFrame.height - windowInfo.bounds.height))
             
