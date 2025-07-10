@@ -432,13 +432,13 @@ class GeminiLLMService {
         - Example: "i want to code" → Terminal (left 30%), Cursor (center 50%), Arc (right 20%), Spotify (corner 15%)
         
         **Multi-Display Strategies:**
-        - Primary workspace on main display (Display 0)
-        - Secondary tools on external displays (Display 1+)
+        - Primary workspace on EXTERNAL displays (Display 1+) - external monitors are typically larger and better for main work
+        - Secondary/utility tools on laptop display (Display 0) - laptop screen is smaller, perfect for auxiliary tools
         - Context-aware distribution:
-          - Coding: Main IDE on primary, Terminal/docs on secondary
-          - Research: Browser on primary, notes on secondary
-          - Design: Canvas on primary, tools/references on secondary
-        - Preserve focus on primary display for main tasks
+          - Coding: Main IDE on external display (Display 1), Terminal/monitoring on laptop (Display 0)
+          - Research: Browser on external display (Display 1), notes/references on laptop (Display 0)
+          - Design: Canvas on external display (Display 1), tools/palettes on laptop (Display 0)
+        - Preserve focus on external display for main tasks
         
         **Display Context Examples:**
         ```
@@ -452,10 +452,10 @@ class GeminiLLMService {
         flexible_position(app_name: "Arc", x_position: "35", y_position: "15", width: "45", height: "70", layer: "1")
         flexible_position(app_name: "Spotify", x_position: "80", y_position: "80", width: "20", height: "20", layer: "0")
         
-        // Multi-display distribution
-        flexible_position(app_name: "Cursor", x_position: "0", y_position: "0", width: "100", height: "100", layer: "3", focus: "true", display: "0")
-        flexible_position(app_name: "Terminal", x_position: "0", y_position: "0", width: "50", height: "100", layer: "2", display: "1")
-        flexible_position(app_name: "Arc", x_position: "50", y_position: "0", width: "50", height: "100", layer: "1", display: "1")
+        // Multi-display distribution (external monitor primary)
+        flexible_position(app_name: "Cursor", x_position: "0", y_position: "0", width: "100", height: "100", layer: "3", focus: "true", display: "1")
+        flexible_position(app_name: "Terminal", x_position: "0", y_position: "0", width: "100", height: "50", layer: "2", display: "0")
+        flexible_position(app_name: "Activity Monitor", x_position: "0", y_position: "50", width: "100", height: "50", layer: "1", display: "0")
         ```
         
         CASCADE ARRANGEMENT STRATEGY:
@@ -560,19 +560,18 @@ class GeminiLLMService {
         - When making sweeping changes (ie. things that you think should take up the whole screen like 'research' or 'open safari in fullscreen' or 'i want to code') -> Minimize everything that wasn't part of your action that is currently open first
         - When making finite changes (ie. things that don't take up the whole screen like 'move terminal to the right 1/3' or 'put claude in the top right quarter and terminal in the bottom right quarter') -> Do not minimize everything that wasn't part of the action
 
-        **CRITICAL EXAMPLES TO BASE ACTIONS OFF OF:**
+        **EXAMPLES TO BASE ACTIONS OFF OF:**
 
+        Before getting into examples here are some general requirements that you will see in the examples:
+        - Every window should have at least a 100px by 100px area where no other window is underneath it or covering it
+        - 100 percent of the screen must be filled, no matter what
+        - If you cannot fit windows into a screen without sacrificing 1 or more of these conditions, minimize windows that don't seem as important until they can fit
+        
         User prompt:
         "code"
         
         Expected output:
         "toolCalls":["flexible_position(\n    app_name: \"Terminal\",\n    x_position: \"66.7\",\n    y_position: \"2.8\",\n    width: \"33.3\",\n    height: \"97.2\",\n    layer: \"3\",\n    focus: \"true\"\n)","flexible_position(\n    app_name: \"Xcode\",\n    x_position: \"-0.0\",\n    y_position: \"2.8\",\n    width: \"66.7\",\n    height: \"88.3\",\n    layer: \"2\",\n    focus: \"false\"\n)","flexible_position(\n    app_name: \"Arc\",\n    x_position: \"0.0\",\n    y_position: \"12.6\",\n    width: \"66.7\",\n    height: \"87.4\",\n    layer: \"1\",\n    focus: \"false\"\n)"]
-        
-        User prompt:
-        "move terminal bigger"
-        
-        Expected output:
-        "toolCalls":["flexible_position(\n    app_name: \"Terminal\",\n    x_position: \"60.0\",\n    y_position: \"2.8\",\n    width: \"40.0\",\n    height: \"97.2\",\n    layer: \"3\",\n    focus: \"true\"\n)","flexible_position(\n    app_name: \"Xcode\",\n    x_position: \"0.0\",\n    y_position: \"2.8\",\n    width: \"60.0\",\n    height: \"88.3\",\n    layer: \"2\",\n    focus: \"false\"\n)","flexible_position(\n    app_name: \"Arc\",\n    x_position: \"0.0\",\n    y_position: \"12.6\",\n    width: \"60.0\",\n    height: \"87.4\",\n    layer: \"1\",\n    focus: \"false\"\n)"]
         
         User prompt:
         "research"
