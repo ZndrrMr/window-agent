@@ -4,6 +4,7 @@ import Carbon
 protocol HotkeyManagerDelegate: AnyObject {
     func hotkeyPressed()
     func xrayOverlayRequested()
+    func rearrangeWindowsRequested()
 }
 
 class HotkeyManager {
@@ -34,9 +35,7 @@ class HotkeyManager {
     init() {
         HotkeyManager.sharedInstance = self
         setupHotkeyHandler()
-        // TODO: Re-enable after X-Ray overlay visual polish is complete
-        // setupCommandKeyMonitoring()  // Double-tap Command detection disabled
-        // _ = registerXRayHotkey()      // Command+Shift+X hotkey disabled
+        _ = registerRearrangeHotkey()  // Command+Shift+X for "rearrange my windows"
     }
     
     deinit {
@@ -96,6 +95,27 @@ class HotkeyManager {
         hotKeyRef = nil
     }
     
+    func registerRearrangeHotkey() -> Bool {
+        // Register Command+Shift+X for "rearrange my windows"
+        let keyCode: UInt32 = 7 // X key
+        let modifiers: UInt32 = UInt32(cmdKey) | UInt32(shiftKey)
+        
+        let status = RegisterEventHotKey(keyCode,
+                                       modifiers,
+                                       xrayHotKeyID,
+                                       GetApplicationEventTarget(),
+                                       0,
+                                       &xrayHotKeyRef)
+        
+        if status == noErr {
+            print("✅ Rearrange hotkey registered: ⌘+⇧+X")
+            return true
+        } else {
+            print("❌ HotkeyManager: Failed to register rearrange hotkey. Error: \(status)")
+            return false
+        }
+    }
+    
     func registerXRayHotkey() -> Bool {
         // Register Command+Shift+X for X-Ray overlay
         let keyCode: UInt32 = 7 // X key
@@ -153,7 +173,7 @@ class HotkeyManager {
     
     fileprivate func handleXRayHotkeyEvent() {
         DispatchQueue.main.async { [weak self] in
-            self?.delegate?.xrayOverlayRequested()
+            self?.delegate?.rearrangeWindowsRequested()
         }
     }
     

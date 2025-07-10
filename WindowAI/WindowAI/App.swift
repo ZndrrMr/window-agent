@@ -526,6 +526,20 @@ extension WindowAIController {
         }
     }
     
+    func rearrangeWindowsRequested() {
+        print("🔄 Rearrange windows hotkey pressed (⌘+⇧+X)")
+        
+        DispatchQueue.main.async {
+            // Hide command window if visible
+            if self.commandWindow.isVisible {
+                self.commandWindow.hideWindow()
+            }
+            
+            // Automatically process "rearrange my windows" command
+            self.processUserCommand("rearrange my windows")
+        }
+    }
+    
     // MARK: - Layout Capture
     private func generateLayoutCapture() async {
         print("🎬 Capturing current layout...")
