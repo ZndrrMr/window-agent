@@ -274,6 +274,20 @@ class GeminiLLMService {
         let response = try await sendRequest(request)
         let commands = try parseCommandsFromResponse(response)
         
+        // Validate command constraints and retry if needed
+        if let context = context {
+            let validatedCommands = try await enforceConstraints(commands, context: context, userInput: userInput, originalPrompt: systemPrompt)
+            
+            // Debug: Compare tool calls generated vs windows available
+            print("📈 ANALYSIS: Generated \(validatedCommands.count) tool calls for \(windowCount) available windows")
+            if validatedCommands.count < windowCount && windowCount > 3 {
+                print("⚠️  NOTE: Only \(validatedCommands.count) windows positioned out of \(windowCount) available")
+                print("   Consider if all windows should be arranged for comprehensive layout")
+            }
+            
+            return validatedCommands
+        }
+        
         // Debug: Compare tool calls generated vs windows available
         print("📈 ANALYSIS: Generated \(commands.count) tool calls for \(windowCount) available windows")
         if commands.count < windowCount && windowCount > 3 {
@@ -316,22 +330,24 @@ class GeminiLLMService {
         var prompt = """
         CRITICAL: You MUST ALWAYS use the provided function tools. NEVER respond with just text explanations.
         
-        You are WindowAI, an intelligent macOS window management assistant using ASCII GRID REPRESENTATION for spatial reasoning.
+        You are WindowAI, an intelligent macOS window management assistant that uses SYMBOLIC REASONING and MATHEMATICAL VALIDATION for precise constraint satisfaction.
         
-        ASCII GRID SYSTEM:
-        - Each character represents a 50x50 pixel area
-        - Numbers/letters represent different apps (see legend)
-        - '.' = empty space
-        - 'X' = overlap between windows
-        - Each window MUST have at least 2x2 cells (100x100px) visible
-        - Screen must be 100% filled - no empty '.' spaces allowed
+        CRITICAL CONSTRAINT: Every window MUST have at least 100x100 pixels visible (not covered by other windows).
         
-        SPATIAL REASONING APPROACH:
-        1. Visualize the current state in the ASCII grid
-        2. Plan movements by imagining the grid changes
-        3. Verify each window maintains 2x2 visible cells
-        4. Use the grid to prevent unwanted overlaps
-        5. Ensure complete grid coverage with no empty spaces
+        SYMBOLIC NOTATION SYSTEM:
+        - Window: AppName[x,y,width,height,L#] where L# is layer (higher = front)
+        - Overlap: App1∩App2 = [x,y,w,h] (intersection rectangle)
+        - Visible calculation: App.visible = (width×height) - Σ(overlap_areas) = result px²
+        - Constraint check: visible_area >= 10,000px² (100×100) = ✓ or ✗
+        
+        MATHEMATICAL VALIDATION REQUIREMENTS (MANDATORY):
+        1. For EVERY window placement/movement, calculate ALL overlaps with existing windows
+        2. Show visible area calculation: total_area - Σ(occluded_areas) = visible_area
+        3. Verify constraint: visible_area >= 10,000px² (100×100 minimum)
+        4. If constraint fails, MUST find alternative placement - NO EXCEPTIONS
+        5. Layer rules: Higher layer numbers occlude lower numbers only
+        6. VALIDATE BEFORE POSITIONING: Check if your intended layout satisfies all constraints
+        7. If ANY window violates constraints, REPOSITION until all constraints satisfied
         
         CORE PHILOSOPHY:
         You solve window management by making ALL relevant apps accessible with a single click. Apps peek out from behind others in intelligent cascades, eliminating the need for cmd+tab, stage manager, or hunting for hidden windows. Everything the user needs is always visible and clickable. The visibility for each app when peaking from behind another should be at least 1/10 of the screen height by 1/10 of the screen width.
@@ -644,13 +660,61 @@ class GeminiLLMService {
         - For positioning commands → use flexible_position for precise control
         - MANDATORY: Every user request MUST result in function calls, not text responses
         
-        ASCII GRID RESPONSE FORMAT:
-        When making changes, visualize the NEW grid layout in your mind:
-        1. Identify which app characters will move
-        2. Ensure no empty '.' cells remain
-        3. Verify each app has at least 2x2 cells visible
-        4. Check that overlaps ('X') are minimized
-        5. Use flexible_position calls to achieve the desired grid
+        CONSTRAINT ENFORCEMENT PROTOCOL:
+        1. BEFORE making ANY flexible_position calls, perform mathematical validation
+        2. If ANY window would violate the 100×100px constraint, REJECT that layout
+        3. Find alternative positions that satisfy ALL constraints
+        4. NEVER proceed with invalid layouts - constraints are NON-NEGOTIABLE
+        5. If no valid layout exists, minimize less important windows until constraints satisfied
+        
+        VALIDATION EXAMPLES (MANDATORY PROCESS):
+        
+        Example 1: Valid placement
+        Current: Safari[0,0,400,300,L1]
+        Action: Place Terminal[350,250,300,200,L2]
+        
+        VALIDATION STEPS:
+        1. Check overlap: Safari∩Terminal = [350,250,50,50]
+        2. Calculate visible areas:
+           - Safari.visible = (400×300) - (50×50) = 120,000 - 2,500 = 117,500px² ✓
+           - Terminal.visible = 300×200 = 60,000px² ✓
+        3. Both > 10,000px² → VALID placement
+        
+        Example 2: Invalid placement requiring correction
+        Current: Finder[0,0,150,150,L1]
+        Action: Place Chrome[0,0,200,200,L2]
+        
+        VALIDATION STEPS:
+        1. Check overlap: Finder∩Chrome = [0,0,150,150] (complete overlap)
+        2. Calculate visible areas:
+           - Finder.visible = (150×150) - (150×150) = 22,500 - 22,500 = 0px² ✗
+           - Chrome.visible = 200×200 = 40,000px² ✓
+        3. Finder has 0px² visible → INVALID placement
+        4. ALTERNATIVE: Move Chrome to [100,100,200,200,L2]
+           - New overlap: [100,100,50,50]
+           - Finder.visible = 22,500 - 2,500 = 20,000px² ✓
+        
+        Example 3: Multi-window constraint validation
+        Current: Arc[0,0,800,600,L1], Terminal[400,300,400,300,L2]
+        Action: Place Cursor[200,150,600,450,L3]
+        
+        VALIDATION STEPS:
+        1. Calculate overlaps:
+           - Arc∩Cursor = [200,150,600,450] = 270,000px²
+           - Terminal∩Cursor = [400,300,400,300] = 120,000px²
+        2. Calculate visible areas:
+           - Arc.visible = (800×600) - (600×450) = 480,000 - 270,000 = 210,000px² ✓
+           - Terminal.visible = (400×300) - (400×300) = 120,000 - 120,000 = 0px² ✗
+           - Cursor.visible = 600×450 = 270,000px² ✓
+        3. Terminal violates constraint → REPOSITION REQUIRED
+        4. ALTERNATIVE: Move Cursor to [200,0,600,400,L3]
+           - Arc∩Cursor = [200,0,600,400] = 240,000px²
+           - Terminal∩Cursor = [400,300,400,100] = 40,000px²
+           - Arc.visible = 480,000 - 240,000 = 240,000px² ✓
+           - Terminal.visible = 120,000 - 40,000 = 80,000px² ✓
+           - Cursor.visible = 600×400 = 240,000px² ✓
+        
+        CRITICAL: You MUST perform this validation for EVERY window arrangement. If ANY window violates the 100×100px constraint, you MUST find an alternative layout.
         
         """
         
@@ -680,73 +744,62 @@ class GeminiLLMService {
                 prompt += "Display \(index): \(width)x\(height)\(isMain ? " (Main)" : "")\(displayHint)\n"
             }
             
-            // ASCII GRID REPRESENTATION
+            // SYMBOLIC WINDOW LAYOUT ANALYSIS WITH CONSTRAINT VALIDATION
             if !context.visibleWindows.isEmpty {
-                // Generate ASCII grid for the main display (Display 0)
-                let mainDisplaySize = context.screenResolutions.first ?? CGSize(width: 1920, height: 1080)
-                let windowInfos = context.visibleWindows.compactMap { window in
-                    // Create a dummy AXUIElement for ASCII grid generation
-                    // This is only used for the grid visualization, not actual window manipulation
-                    let dummyRef = AXUIElementCreateApplication(pid_t(0))
-                    return WindowInfo(
-                        title: window.title,
-                        appName: window.appName,
-                        bounds: window.bounds,
-                        windowRef: dummyRef
-                    )
-                }
+                prompt += "\nCURRENT WINDOW LAYOUT:\n"
                 
-                let gridResult = ASCIIGridGenerator.generateGrid(for: windowInfos, screenSize: mainDisplaySize)
+                // Convert to WindowState objects for symbolic analysis
+                let windowStates = WorkspaceAnalyzer.shared.convertToWindowStates(context.visibleWindows)
+                let validator = ConstraintValidator.shared
+                let validation = validator.validateConstraints(windows: windowStates)
                 
-                prompt += "\nCURRENT SCREEN STATE:\n"
-                prompt += gridResult.asciiGrid
-                prompt += "\n"
-                prompt += gridResult.legend
-                
-                // Add validation results
-                var validationSummary = "\nVISIBILITY VALIDATION:\n"
-                for (appName, validation) in gridResult.validations {
-                    let status = validation.meetsMinimum ? "✓" : "✗"
-                    validationSummary += "\(appName): \(validation.visibleCells) cells \(status)"
-                    if validation.hasOverlap {
-                        validationSummary += " (has overlap)"
+                // Display windows with symbolic notation
+                for window in windowStates.sorted(by: { $0.layer > $1.layer }) {
+                    let bounds = window.frame
+                    let displayIndex = window.displayIndex
+                    
+                    // Use the correct display for percentage calculations
+                    let displayResolution = (displayIndex >= 0 && displayIndex < context.screenResolutions.count) 
+                        ? context.screenResolutions[displayIndex] 
+                        : (context.screenResolutions.first ?? CGSize(width: 1440, height: 900))
+                    
+                    let widthPercent = (bounds.width / displayResolution.width) * 100
+                    let heightPercent = (bounds.height / displayResolution.height) * 100
+                    
+                    prompt += "- \(window.symbolicNotation) - \(String(format: "%.0f", widthPercent))%w × \(String(format: "%.0f", heightPercent))%h"
+                    
+                    if window.isMinimized {
+                        prompt += " [MINIMIZED]"
                     }
-                    validationSummary += "\n"
+                    
+                    prompt += "\n"
                 }
-                prompt += validationSummary
                 
-                // ASCII GRID ANALYSIS
-                prompt += "\nGRID ANALYSIS:\n"
+                // Add overlap analysis
+                if !validation.overlaps.isEmpty {
+                    prompt += "\nOVERLAP ANALYSIS:\n"
+                    var processedPairs: Set<String> = []
+                    
+                    for (_, windowOverlaps) in validation.overlaps {
+                        for overlap in windowOverlaps {
+                            let pairKey = [overlap.window1, overlap.window2].sorted().joined(separator: "-")
+                            
+                            if !processedPairs.contains(pairKey) {
+                                prompt += "- \(overlap.symbolicNotation)\n"
+                                processedPairs.insert(pairKey)
+                            }
+                        }
+                    }
+                }
                 
-                // Count filled vs empty cells
-                let totalCells = gridResult.gridDimensions.width * gridResult.gridDimensions.height
-                let emptyCells = gridResult.asciiGrid.filter { $0 == "." }.count
-                let filledCells = totalCells - emptyCells
-                let coveragePercent = Double(filledCells) / Double(totalCells) * 100
-                
-                prompt += "Screen coverage: \(String(format: "%.1f", coveragePercent))% (\(filledCells)/\(totalCells) cells filled)\n"
-                
-                // Check for overlaps
-                let overlapCells = gridResult.asciiGrid.filter { $0 == "X" }.count
-                if overlapCells > 0 {
-                    prompt += "Overlaps detected: \(overlapCells) cells marked with 'X'\n"
+                // Add constraint validation results
+                if !validation.violations.isEmpty {
+                    prompt += "\nCONSTRAINT VIOLATIONS:\n"
+                    for violation in validation.violations {
+                        prompt += "- \(violation.window): \(Int(violation.actualArea))px² visible (need \(Int(violation.requiredArea))px²) - MUST FIX\n"
+                    }
                 } else {
-                    prompt += "No overlaps detected\n"
-                }
-                
-                // Check minimum visibility violations
-                let violatingApps = gridResult.validations.filter { !$0.value.meetsMinimum }
-                if !violatingApps.isEmpty {
-                    prompt += "Visibility violations: \(violatingApps.keys.joined(separator: ", "))\n"
-                }
-                
-                // Grid efficiency analysis
-                if coveragePercent < 85 {
-                    prompt += "INEFFICIENCY: Poor screen utilization (\(String(format: "%.0f", coveragePercent))% coverage)\n"
-                }
-                
-                if emptyCells > Int(Double(totalCells) * 0.15) {
-                    prompt += "INEFFICIENCY: Too many empty cells - expand windows to fill grid\n"
+                    prompt += "\nCONSTRAINT STATUS: ✓ All windows satisfy 100x100px visibility requirement\n"
                 }
             }
             
@@ -913,6 +966,175 @@ class GeminiLLMService {
     // MARK: - Configuration Validation
     func validateConfiguration() -> Bool {
         return !apiKey.isEmpty
+    }
+    
+    // MARK: - Constraint Enforcement and Retry Logic
+    private func enforceConstraints(_ commands: [WindowCommand], context: LLMContext, userInput: String, originalPrompt: String) async throws -> [WindowCommand] {
+        let maxRetries = 2
+        var currentCommands = commands
+        
+        for attempt in 0..<maxRetries {
+            let validationResult = validateCommandConstraints(currentCommands, context: context)
+            
+            if validationResult.isValid {
+                if attempt == 0 {
+                    print("✅ CONSTRAINT VALIDATION PASSED: All commands satisfy 100×100px requirement")
+                } else {
+                    print("✅ CONSTRAINT VALIDATION PASSED: Commands fixed after \(attempt) retries")
+                }
+                return currentCommands
+            }
+            
+            print("⚠️  CONSTRAINT VALIDATION FAILED (attempt \(attempt + 1)/\(maxRetries)): \(validationResult.violations.count) violations detected")
+            for violation in validationResult.violations {
+                print("   - \(violation)")
+            }
+            
+            // If this is the last attempt, return the commands anyway
+            if attempt == maxRetries - 1 {
+                print("❌ CONSTRAINT ENFORCEMENT FAILED: Proceeding with violating commands after \(maxRetries) attempts")
+                return currentCommands
+            }
+            
+            // Retry with enhanced constraint enforcement
+            print("🔄 RETRYING with enhanced constraint enforcement...")
+            
+            let retryPrompt = buildRetryPrompt(originalPrompt: originalPrompt, violations: validationResult.violations, context: context)
+            let retryRequest = GeminiRequest(
+                contents: [GeminiContent(parts: [GeminiPart(text: userInput)])],
+                tools: convertToGeminiTools(WindowManagementTools.allTools),
+                systemInstruction: GeminiSystemInstruction(parts: [GeminiPart(text: retryPrompt)]),
+                generationConfig: GeminiGenerationConfig(
+                    temperature: 0.1,  // Slightly higher temperature for alternative solutions
+                    maxOutputTokens: 4000
+                ),
+                toolConfig: GeminiToolConfig(
+                    functionCallingConfig: GeminiFunctionCallingConfig(
+                        mode: GeminiFunctionCallingConfig.Mode.any.stringValue
+                    )
+                )
+            )
+            
+            let retryResponse = try await sendRequest(retryRequest)
+            currentCommands = try parseCommandsFromResponse(retryResponse)
+        }
+        
+        // Should not reach here due to the return in the loop
+        return currentCommands
+    }
+    
+    // Build retry prompt with specific constraint violations
+    private func buildRetryPrompt(originalPrompt: String, violations: [String], context: LLMContext) -> String {
+        var retryPrompt = originalPrompt
+        
+        retryPrompt += "\n\n🚨 CONSTRAINT VIOLATIONS DETECTED - MUST BE FIXED:\n"
+        for violation in violations {
+            retryPrompt += "- \(violation)\n"
+        }
+        
+        retryPrompt += """
+        
+        RETRY INSTRUCTIONS:
+        1. The previous layout violated the 100×100px visibility constraint
+        2. You MUST find alternative positioning that satisfies ALL constraints
+        3. Consider these strategies:
+           - Reduce window sizes to prevent excessive overlap
+           - Adjust positioning to create visible peek areas
+           - Use different cascade offsets or layouts
+           - Minimize less important windows if necessary
+        4. VALIDATE each window's visible area before finalizing positions
+        5. NO EXCEPTIONS - every window must have at least 10,000px² visible
+        
+        REMEMBER: Constraint satisfaction is NON-NEGOTIABLE. Find a layout that works.
+        """
+        
+        return retryPrompt
+    }
+    
+    // MARK: - Command Constraint Validation
+    private func validateCommandConstraints(_ commands: [WindowCommand], context: LLMContext) -> CommandValidationResult {
+        var violations: [String] = []
+        var isValid = true
+        
+        // Convert current windows to WindowState objects
+        let currentWindowStates = WorkspaceAnalyzer.shared.convertToWindowStates(context.visibleWindows)
+        
+        // Create a working copy of window states to apply commands
+        var workingWindowStates = currentWindowStates
+        
+        // Apply each command to the working window states
+        for command in commands {
+            workingWindowStates = applyCommandToWindowStates(command, windowStates: workingWindowStates, context: context)
+        }
+        
+        // Validate the final layout
+        let validator = ConstraintValidator.shared
+        let validation = validator.validateConstraints(windows: workingWindowStates)
+        
+        // Check for violations
+        for violation in validation.violations {
+            violations.append("\(violation.window) would have only \(Int(violation.actualArea))px² visible (needs \(Int(violation.requiredArea))px²)")
+            isValid = false
+        }
+        
+        return CommandValidationResult(isValid: isValid, violations: violations)
+    }
+    
+    // Helper to apply a command to window states for validation
+    private func applyCommandToWindowStates(_ command: WindowCommand, windowStates: [WindowState], context: LLMContext) -> [WindowState] {
+        var updatedStates = windowStates
+        
+        // Find the window to update
+        if let windowIndex = updatedStates.firstIndex(where: { $0.app == command.target }) {
+            let currentWindow = updatedStates[windowIndex]
+            
+            // Apply the command based on its type
+            switch command.action {
+            case .move:
+                if let customPosition = command.customPosition, let customSize = command.customSize {
+                    // Calculate new frame based on display resolution
+                    let displayResolution = context.screenResolutions.first ?? CGSize(width: 1440, height: 900)
+                    let newFrame = CGRect(
+                        x: (customPosition.x / 100) * displayResolution.width,
+                        y: (customPosition.y / 100) * displayResolution.height,
+                        width: (customSize.width / 100) * displayResolution.width,
+                        height: (customSize.height / 100) * displayResolution.height
+                    )
+                    
+                    // Update the window state
+                    let updatedWindow = WindowState(
+                        app: currentWindow.app,
+                        id: currentWindow.id,
+                        frame: newFrame,
+                        layer: currentWindow.layer,
+                        displayIndex: currentWindow.displayIndex,
+                        isMinimized: false
+                    )
+                    
+                    updatedStates[windowIndex] = updatedWindow
+                }
+            case .minimize:
+                let updatedWindow = WindowState(
+                    app: currentWindow.app,
+                    id: currentWindow.id,
+                    frame: currentWindow.frame,
+                    layer: currentWindow.layer,
+                    displayIndex: currentWindow.displayIndex,
+                    isMinimized: true
+                )
+                updatedStates[windowIndex] = updatedWindow
+            case .focus:
+                // Focus doesn't change layout, so no changes needed for constraint validation
+                break
+            case .close:
+                // Remove the window from the states
+                updatedStates.remove(at: windowIndex)
+            default:
+                break
+            }
+        }
+        
+        return updatedStates
     }
     
     // MARK: - MINIMAL TEST METHOD
@@ -1175,4 +1397,10 @@ enum GeminiLLMError: Error, LocalizedError {
             return "Error parsing response: \(message)"
         }
     }
+}
+
+// MARK: - Command Validation Result
+struct CommandValidationResult {
+    let isValid: Bool
+    let violations: [String]
 }
