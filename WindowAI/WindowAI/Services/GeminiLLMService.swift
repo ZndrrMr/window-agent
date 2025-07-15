@@ -204,7 +204,7 @@ class GeminiLLMService {
     private let urlSession: URLSession
     private let baseURL = "https://generativelanguage.googleapis.com/v1beta/models"
     
-    init(apiKey: String, model: String = "gemini-2.0-flash") {
+    init(apiKey: String, model: String = "gemini-2.5-flash") {
         self.apiKey = apiKey
         self.model = model
         
@@ -316,15 +316,22 @@ class GeminiLLMService {
         var prompt = """
         CRITICAL: You MUST ALWAYS use the provided function tools. NEVER respond with just text explanations.
         
-        You are WindowAI, an intelligent macOS window management assistant that learns from user behavior to create the perfect window arrangements.
+        You are WindowAI, an intelligent macOS window management assistant using ASCII GRID REPRESENTATION for spatial reasoning.
         
-        - Unless the user actively says they only want part of the screen filled, you MUST achieve 100% screen coverage collectively across all windows
-        - Windows MUST collectively span entire screen dimensions (width AND height)
-        - When user says "fill the whole screen", "maximize coverage", or similar → use 100% of available space
-        - Expand ALL window sizes beyond typical preferences to fill screen completely
-        - NO large empty areas allowed (>5% of screen unused)
-        - Right edge: windows MUST extend to 100% of screen width
-        - Bottom edge: windows MUST extend to 100% of screen height
+        ASCII GRID SYSTEM:
+        - Each character represents a 50x50 pixel area
+        - Numbers/letters represent different apps (see legend)
+        - '.' = empty space
+        - 'X' = overlap between windows
+        - Each window MUST have at least 2x2 cells (100x100px) visible
+        - Screen must be 100% filled - no empty '.' spaces allowed
+        
+        SPATIAL REASONING APPROACH:
+        1. Visualize the current state in the ASCII grid
+        2. Plan movements by imagining the grid changes
+        3. Verify each window maintains 2x2 visible cells
+        4. Use the grid to prevent unwanted overlaps
+        5. Ensure complete grid coverage with no empty spaces
         
         CORE PHILOSOPHY:
         You solve window management by making ALL relevant apps accessible with a single click. Apps peek out from behind others in intelligent cascades, eliminating the need for cmd+tab, stage manager, or hunting for hidden windows. Everything the user needs is always visible and clickable. The visibility for each app when peaking from behind another should be at least 1/10 of the screen height by 1/10 of the screen width.
@@ -563,7 +570,7 @@ class GeminiLLMService {
         **EXAMPLES TO BASE ACTIONS OFF OF:**
 
         Before getting into examples here are some general requirements that you will see in the examples:
-        - Every window should have at least a 100px by 100px area where no other window is underneath it or covering it
+        - EVERY window should have at least a 100px by 100px area where no other window is underneath it or covering it
         - 100 percent of the screen must be filled, no matter what
         - If you cannot fit windows into a screen without sacrificing 1 or more of these conditions, minimize windows that don't seem as important until they can fit
         
@@ -637,6 +644,14 @@ class GeminiLLMService {
         - For positioning commands → use flexible_position for precise control
         - MANDATORY: Every user request MUST result in function calls, not text responses
         
+        ASCII GRID RESPONSE FORMAT:
+        When making changes, visualize the NEW grid layout in your mind:
+        1. Identify which app characters will move
+        2. Ensure no empty '.' cells remain
+        3. Verify each app has at least 2x2 cells visible
+        4. Check that overlaps ('X') are minimized
+        5. Use flexible_position calls to achieve the desired grid
+        
         """
         
         if let context = context {
@@ -665,87 +680,73 @@ class GeminiLLMService {
                 prompt += "Display \(index): \(width)x\(height)\(isMain ? " (Main)" : "")\(displayHint)\n"
             }
             
-            // DETAILED WINDOW LAYOUT ANALYSIS
+            // ASCII GRID REPRESENTATION
             if !context.visibleWindows.isEmpty {
-                prompt += "\nCURRENT WINDOW LAYOUT:\n"
-                
-                for window in context.visibleWindows {
-                    let bounds = window.bounds
-                    let displayIndex = window.displayIndex
-                    
-                    // Use the correct display for percentage calculations
-                    let displayResolution = (displayIndex >= 0 && displayIndex < context.screenResolutions.count) 
-                        ? context.screenResolutions[displayIndex] 
-                        : (context.screenResolutions.first ?? CGSize(width: 1440, height: 900))
-                    
-                    let widthPercent = (bounds.width / displayResolution.width) * 100
-                    let heightPercent = (bounds.height / displayResolution.height) * 100
-                    let xPercent = (bounds.origin.x / displayResolution.width) * 100
-                    let yPercent = (bounds.origin.y / displayResolution.height) * 100
-                    
-                    prompt += "- \(window.appName): position (\(String(format: "%.0f", xPercent))%, \(String(format: "%.0f", yPercent))%) size \(String(format: "%.0f", widthPercent))%w × \(String(format: "%.0f", heightPercent))%h on Display \(displayIndex)"
-                    
-                    if window.isMinimized {
-                        prompt += " [MINIMIZED]"
-                    }
-                    
-                    prompt += "\n"
+                // Generate ASCII grid for the main display (Display 0)
+                let mainDisplaySize = context.screenResolutions.first ?? CGSize(width: 1920, height: 1080)
+                let windowInfos = context.visibleWindows.compactMap { window in
+                    // Create a dummy AXUIElement for ASCII grid generation
+                    // This is only used for the grid visualization, not actual window manipulation
+                    let dummyRef = AXUIElementCreateApplication(pid_t(0))
+                    return WindowInfo(
+                        title: window.title,
+                        appName: window.appName,
+                        bounds: window.bounds,
+                        windowRef: dummyRef
+                    )
                 }
                 
-                // LAYOUT ANALYSIS
-                prompt += "\nLAYOUT ANALYSIS:\n"
+                let gridResult = ASCIIGridGenerator.generateGrid(for: windowInfos, screenSize: mainDisplaySize)
                 
-                // Calculate total screen coverage
-                var totalCoverage: Double = 0
-                var overlaps: [String] = []
+                prompt += "\nCURRENT SCREEN STATE:\n"
+                prompt += gridResult.asciiGrid
+                prompt += "\n"
+                prompt += gridResult.legend
                 
-                for i in 0..<context.visibleWindows.count {
-                    let window1 = context.visibleWindows[i]
-                    if window1.isMinimized { continue }
-                    
-                    let area1 = window1.bounds.width * window1.bounds.height
-                    totalCoverage += area1
-                    
-                    // Check for overlaps
-                    for j in (i+1)..<context.visibleWindows.count {
-                        let window2 = context.visibleWindows[j]
-                        if window2.isMinimized { continue }
-                        
-                        let intersect = window1.bounds.intersection(window2.bounds)
-                        if !intersect.isEmpty {
-                            overlaps.append("\(window1.appName) overlaps \(window2.appName)")
-                        }
+                // Add validation results
+                var validationSummary = "\nVISIBILITY VALIDATION:\n"
+                for (appName, validation) in gridResult.validations {
+                    let status = validation.meetsMinimum ? "✓" : "✗"
+                    validationSummary += "\(appName): \(validation.visibleCells) cells \(status)"
+                    if validation.hasOverlap {
+                        validationSummary += " (has overlap)"
                     }
+                    validationSummary += "\n"
+                }
+                prompt += validationSummary
+                
+                // ASCII GRID ANALYSIS
+                prompt += "\nGRID ANALYSIS:\n"
+                
+                // Count filled vs empty cells
+                let totalCells = gridResult.gridDimensions.width * gridResult.gridDimensions.height
+                let emptyCells = gridResult.asciiGrid.filter { $0 == "." }.count
+                let filledCells = totalCells - emptyCells
+                let coveragePercent = Double(filledCells) / Double(totalCells) * 100
+                
+                prompt += "Screen coverage: \(String(format: "%.1f", coveragePercent))% (\(filledCells)/\(totalCells) cells filled)\n"
+                
+                // Check for overlaps
+                let overlapCells = gridResult.asciiGrid.filter { $0 == "X" }.count
+                if overlapCells > 0 {
+                    prompt += "Overlaps detected: \(overlapCells) cells marked with 'X'\n"
+                } else {
+                    prompt += "No overlaps detected\n"
                 }
                 
-                // Use main display for layout analysis
-                let mainDisplayResolution = context.screenResolutions.first ?? CGSize(width: 1440, height: 900)
-                let screenArea = mainDisplayResolution.width * mainDisplayResolution.height
-                let coveragePercent = min((totalCoverage / screenArea) * 100, 100)
-                
-                prompt += "- Screen coverage: \(String(format: "%.0f", coveragePercent))%\n"
-                
-                if !overlaps.isEmpty {
-                    prompt += "- Window overlaps: \(overlaps.joined(separator: ", "))\n"
+                // Check minimum visibility violations
+                let violatingApps = gridResult.validations.filter { !$0.value.meetsMinimum }
+                if !violatingApps.isEmpty {
+                    prompt += "Visibility violations: \(violatingApps.keys.joined(separator: ", "))\n"
                 }
                 
-                // Identify layout inefficiencies
-                let visibleNonMinimized = context.visibleWindows.filter { !$0.isMinimized }
-                if visibleNonMinimized.count > 1 {
-                    let avgWidth = visibleNonMinimized.map { $0.bounds.width }.reduce(0, +) / Double(visibleNonMinimized.count)
-                    let avgHeight = visibleNonMinimized.map { $0.bounds.height }.reduce(0, +) / Double(visibleNonMinimized.count)
-                    
-                    if coveragePercent < 85 {
-                        prompt += "- INEFFICIENCY: Poor screen utilization (\(String(format: "%.0f", coveragePercent))% coverage)\n"
-                    }
-                    
-                    if avgWidth < mainDisplayResolution.width * 0.3 {
-                        prompt += "- INEFFICIENCY: Windows too narrow (avg \(String(format: "%.0f", (avgWidth/mainDisplayResolution.width)*100))% width)\n"
-                    }
-                    
-                    if avgHeight < mainDisplayResolution.height * 0.4 {
-                        prompt += "- INEFFICIENCY: Windows too short (avg \(String(format: "%.0f", (avgHeight/mainDisplayResolution.height)*100))% height)\n"
-                    }
+                // Grid efficiency analysis
+                if coveragePercent < 85 {
+                    prompt += "INEFFICIENCY: Poor screen utilization (\(String(format: "%.0f", coveragePercent))% coverage)\n"
+                }
+                
+                if emptyCells > Int(Double(totalCells) * 0.15) {
+                    prompt += "INEFFICIENCY: Too many empty cells - expand windows to fill grid\n"
                 }
             }
             
