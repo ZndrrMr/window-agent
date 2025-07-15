@@ -240,11 +240,11 @@ class GeminiLLMService {
         let systemPrompt = buildSystemPrompt(context: context)
         print("📝 SYSTEM PROMPT LENGTH: \(systemPrompt.count) characters")
         
-        // Calculate dynamic token limit based on window count
-        let baseTokens = 2000
-        let tokensPerWindow = context?.visibleWindows.count ?? 0 > 5 ? 400 : 200
-        let calculatedTokens = baseTokens + (tokensPerWindow * (context?.visibleWindows.count ?? 1))
-        let maxTokens = min(max(calculatedTokens, 2000), 8000) // Between 2000-8000 tokens
+        // Calculate dynamic token limit with higher allocation for output
+        let promptLength = systemPrompt.count
+        let estimatedPromptTokens = promptLength / 4 // Rough estimate: 4 chars per token
+        let outputTokens = max(4000, min(8000, 16000 - estimatedPromptTokens)) // Ensure sufficient output tokens
+        let maxTokens = outputTokens
         
         let request = GeminiRequest(
             contents: [GeminiContent(parts: [GeminiPart(text: userInput)])],
@@ -272,6 +272,14 @@ class GeminiLLMService {
         }
         
         let response = try await sendRequest(request)
+        
+        // Handle MAX_TOKENS error with retry
+        if let candidate = response.candidates.first,
+           candidate.finishReason == "MAX_TOKENS" {
+            print("⚠️  MAX_TOKENS reached - retrying with reduced context")
+            return try await retryWithReducedContext(userInput: userInput, context: context, originalTokens: maxTokens)
+        }
+        
         let commands = try parseCommandsFromResponse(response)
         
         // Validate command constraints and retry if needed
@@ -328,486 +336,68 @@ class GeminiLLMService {
         // Get intelligent pattern hints
         let patternHints = buildPatternHints(context: context)
         var prompt = """
-        CRITICAL: You MUST ALWAYS use the provided function tools. NEVER respond with just text explanations.
+        CRITICAL: ALWAYS use function tools. NEVER respond with text.
         
-        You are WindowAI, an intelligent macOS window management assistant that uses SYMBOLIC REASONING and MATHEMATICAL VALIDATION for precise constraint satisfaction.
+        You are WindowAI for macOS window management with constraint validation.
         
-        CRITICAL CONSTRAINT: Every window MUST have at least 100x100 pixels visible (not covered by other windows).
+        CONSTRAINT: Every window MUST have ≥100×100px visible (10,000px² minimum).
         
-        SYMBOLIC NOTATION SYSTEM:
-        - Window: AppName[x,y,width,height,L#] where L# is layer (higher = front)
-        - Overlap: App1∩App2 = [x,y,w,h] (intersection rectangle)
-        - Visible calculation: App.visible = (width×height) - Σ(overlap_areas) = result px²
-        - Constraint check: visible_area >= 10,000px² (100×100) = ✓ or ✗
+        CORE RULES:
+        1. MAXIMIZE SCREEN USAGE - Fill 95%+ of screen space
+        2. CASCADE INTELLIGENTLY - Apps overlap with key parts visible for instant access
+        3. VALIDATE CONSTRAINTS - Ensure every window has ≥10,000px² visible area
+        4. PIXEL-PERFECT POSITIONING - Use any coordinate/size (not just halves/thirds)
         
-        MATHEMATICAL VALIDATION REQUIREMENTS (MANDATORY):
-        1. For EVERY window placement/movement, calculate ALL overlaps with existing windows
-        2. Show visible area calculation: total_area - Σ(occluded_areas) = visible_area
-        3. Verify constraint: visible_area >= 10,000px² (100×100 minimum)
-        4. If constraint fails, MUST find alternative placement - NO EXCEPTIONS
-        5. Layer rules: Higher layer numbers occlude lower numbers only
-        6. VALIDATE BEFORE POSITIONING: Check if your intended layout satisfies all constraints
-        7. If ANY window violates constraints, REPOSITION until all constraints satisfied
+        APP TYPES:
+        - Terminals/Chat: 25-35% width, full height, side columns
+        - Browsers/Documents: 45-70% width, primary content area
+        - IDEs/Editors: 50-75% width, main workspace
+        - System/Music: 15-25% width, corners/edges
         
-        CORE PHILOSOPHY:
-        You solve window management by making ALL relevant apps accessible with a single click. Apps peek out from behind others in intelligent cascades, eliminating the need for cmd+tab, stage manager, or hunting for hidden windows. Everything the user needs is always visible and clickable. The visibility for each app when peaking from behind another should be at least 1/10 of the screen height by 1/10 of the screen width.
+        POSITIONING:
+        - Use flexible coordinates (0-100% of screen)
+        - Cascade with 20-200px offsets
+        - Prioritize screen coverage over rigid rules
         
-        FUNDAMENTAL PRINCIPLES:
-        1. MAXIMIZE SCREEN USAGE - Fill entire screen space unless user explicitly requests minimal layouts
-        2. CASCADE BY DEFAULT - Apps should intelligently overlap with key parts visible for instant access unless the user actively requests a tiled layout
-        3. NO HARDCODED RULES - Learn from patterns, don't follow rigid defaults
-        5. PIXEL-PERFECT FLEXIBILITY - Position windows at ANY coordinate with ANY size
-        6. LEARN AND ADAPT - Remember how users adjust windows and their preferences
+        TOOL USAGE:
+        Use `flexible_position` for ALL operations:
+        - Window positioning: x_position, y_position, width, height (percentages)
+        - Window lifecycle: minimize, restore, focus, open parameters
+        - Layer control: layer parameter for stacking (0=back, 3=front)
         
-        CASCADE INTELLIGENCE:
-        The cascade system is the backbone of this app. It ensures all apps remain accessible:
-        - Focus app: Given prominent positioning for current work
-        - Other apps: Peek out with clickable edges, title bars, or identifying features
-        - Nothing is ever completely hidden - every app has a clickable surface, matter what window is currently selected
-        - Smart overlapping: leave music controls visible, terminal output readable, message notifications seen
-        - Arrange based on app behavior patterns and user context, not fixed rules
+        MULTI-DISPLAY:
+        - Display 0 = laptop, Display 1+ = external monitors
+        - Prefer external displays for main work
         
-        APP BEHAVIOR ARCHETYPES:
-        Recognize these fundamental interaction patterns to arrange windows intelligently:
-        
-        **Text-Stream Tools** (Terminal, Console, Logs, Chat apps like Slack/Messages)
-        - Behavior: Display flowing text that users read vertically
-        - Reasoning: Content flows top-to-bottom, but should use available space efficiently
-        - Cascade Strategy: Excellent for side columns - use full vertical space, optimize horizontal within screen maximization
-        - Screen Usage: Can use 25-35% width when maximizing screen coverage, more if needed to fill space
-        - Examples: Terminal, Console, iTerm, Slack, Messages, Discord
-        
-        **Content Canvas Tools** (Browsers, Documents, Design apps)
-        - Behavior: Display formatted content designed for specific aspect ratios
-        - Reasoning: Content has intended layouts, but should maximize available space
-        - Cascade Strategy: Use substantial width for functionality, expand to fill available space when maximizing screen usage
-        - Screen Usage: Prefer 45-70% width depending on space availability and other apps present
-        - Examples: Arc, Safari, Chrome, PDFs, Figma, Photoshop, Sketch
-        
-        **Code Workspace Tools** (IDEs, Editors, Development environments)
-        - Behavior: Primary work environment where users spend extended time
-        - Reasoning: Users need maximum real estate for code editing and navigation
-        - Cascade Strategy: Primary layer, maximizes available space while ensuring auxiliaries remain accessible
-        - Screen Usage: Claims largest portion (50-75% width) but expands to fill all available space
-        - Examples: Cursor, Xcode, VS Code, Sublime Text, IntelliJ
-        
-        **Glanceable Monitors** (System info, Music players, Timers)
-        - Behavior: Persistent visibility for occasional checking, minimal interaction
-        - Reasoning: Users glance at these but don't actively work in them
-        - Cascade Strategy: Efficient use of corners or edges, expand if space available for screen maximization
-        - Screen Usage: Typically 15-25% width, but can use more space if it helps fill the screen completely
-        - Examples: Activity Monitor, Spotify, Music, Clock, System Preferences
-        
-        CONFLICT RESOLUTION:
-        When archetype guidance conflicts with screen utilization, ALWAYS prioritize maximizing screen usage:
-        - If Browser "needs 45% width" but only 30% remains → give it 30% and ensure total coverage is 95%+
-        - Screen utilization is the PRIMARY directive - archetype strategies guide HOW to use maximal space
-        - Never leave empty areas unused unless explicitly requested by the user
-        
-        POSITIONING PRECISION:
-        You have complete flexibility in positioning. Don't limit yourself to halves or thirds:
-        - Position: Any x,y coordinate (0-100% of screen)
-        - Width: 15%, 23%, 38%, 42%, 55%, 62%, 67%, 73%, 85%, 92% (any percentage)
-        - Height: Similarly flexible
-        - Cascade offsets: 20px, 35px, 50px, 80px, 120px, 200px (adapt to screen and window count)
-        - Consider app content: terminal might need 480px width, music player just 300px
-        
-        CONTEXT UNDERSTANDING:
-        Understand intent without hardcoded rules:
-        - "I want to code" → Open their observed coding apps
-        - "Take notes" → Use their note app
-        - "Research" → Browser + their note-taking app + reference materials
-        
-        MULTI-DISPLAY HANDLING:
-        - Display 0 = main/primary, Display 1 = external, etc.
-        - Common phrases: "external monitor" → display 1, "laptop screen" → display 0
-        - Preserve display when resizing, only move when explicitly requested
-        
-        DISPLAY-AWARE POSITIONING STRATEGIES:
-        Adapt your positioning approach based on display characteristics:
-        
-        **Small Displays (≤1920x1080):**
-        - Use more aggressive cascading (60-70% overlap)
-        - Prefer narrower windows (30-40% width for supporting apps)
-        - Tighter cascade offsets (20-30px)
-        - Focus on essential apps only (2-3 windows max)
-        - Example: "i want to code" → Terminal (25% width), Cursor (75% width with 50% overlap)
-        
-        **Medium Displays (1920x1080 to 2560x1440):**
-        - Balanced cascading (40-50% overlap)
-        - Standard window widths (35-45% for supporting apps)
-        - Medium cascade offsets (40-60px)
-        - Support 3-4 windows comfortably
-        - Example: "i want to code" → Terminal (35% width), Cursor (65% width with 40% overlap), Arc (50% width peek)
-        
-        **Large Displays (≥2560x1440):**
-        - Minimal cascading (20-30% overlap)
-        - Wider windows (40-60% width for supporting apps)
-        - Generous cascade offsets (60-100px)
-        - Support 4+ windows with breathing room
-        - Example: "i want to code" → Terminal (30% width), Cursor (70% width with 25% overlap), Arc (55% width peek), Spotify (25% width corner)
-        
-        **Ultra-wide Displays (≥3440x1440):**
-        - Side-by-side arrangements preferred over cascading
-        - Multiple primary zones (left 40%, center 40%, right 20%)
-        - Minimal overlaps except for glanceable monitors
-        - Support 5+ windows in distinct zones
-        - Example: "i want to code" → Terminal (left 30%), Cursor (center 50%), Arc (right 20%), Spotify (corner 15%)
-        
-        **Multi-Display Strategies:**
-        - Primary workspace on EXTERNAL displays (Display 1+) - external monitors are typically larger and better for main work
-        - Secondary/utility tools on laptop display (Display 0) - laptop screen is smaller, perfect for auxiliary tools
-        - Context-aware distribution:
-          - Coding: Main IDE on external display (Display 1), Terminal/monitoring on laptop (Display 0)
-          - Research: Browser on external display (Display 1), notes/references on laptop (Display 0)
-          - Design: Canvas on external display (Display 1), tools/palettes on laptop (Display 0)
-        - Preserve focus on external display for main tasks
-        
-        **Display Context Examples:**
-        ```
-        // Small display optimization
-        flexible_position(app_name: "Cursor", x_position: "0", y_position: "0", width: "70", height: "100", layer: "3", focus: "true")
-        flexible_position(app_name: "Terminal", x_position: "70", y_position: "0", width: "30", height: "100", layer: "2")
-        
-        // Large display optimization
-        flexible_position(app_name: "Cursor", x_position: "0", y_position: "0", width: "55", height: "100", layer: "3", focus: "true")
-        flexible_position(app_name: "Terminal", x_position: "55", y_position: "0", width: "25", height: "100", layer: "2")
-        flexible_position(app_name: "Arc", x_position: "35", y_position: "15", width: "45", height: "70", layer: "1")
-        flexible_position(app_name: "Spotify", x_position: "80", y_position: "80", width: "20", height: "20", layer: "0")
-        
-        // Multi-display distribution (external monitor primary)
-        flexible_position(app_name: "Cursor", x_position: "0", y_position: "0", width: "100", height: "100", layer: "3", focus: "true", display: "1")
-        flexible_position(app_name: "Terminal", x_position: "0", y_position: "0", width: "100", height: "50", layer: "2", display: "0")
-        flexible_position(app_name: "Activity Monitor", x_position: "0", y_position: "50", width: "100", height: "50", layer: "1", display: "0")
-        ```
-        
-        CASCADE ARRANGEMENT STRATEGY:
-        When arranging multiple windows, use archetype-based positioning:
-        
-        1. **Identify App Archetypes**: Classify each app by its behavior pattern
-        2. **Assign Cascade Roles**:
-           - Text-Stream Tools → Side columns (full height, minimal width)
-           - Code Workspace Tools → Primary layer (most space, but leave peek zones)
-           - Content Canvas Tools → Peek layers (enough width to stay functional)
-           - Glanceable Monitors → Corners or edges (minimal space, always visible)
-        
-        3. **Apply Functional Cascade Layout**:
-           - Give the focus app appropriate prominence for the current context
-           - Focus app gets main positioning and highest layer number
-           - Supporting apps cascade with strategic overlaps
-           - Text streams (Terminal/Console) work best as side columns (25-30% width)
-        
-        4. **CASCADE FOCUS PRIORITY**:
-           - Focus the app that matches the user's main intent
-           - Code Workspace apps are primary for development tasks
-           - Content Canvas apps are primary for design/research tasks
-           - Text Stream apps are supporting tools, rarely primary focus
-           - Always check: what would the user be actively working in?
-        
-        6. **Ensure Universal Accessibility**: Every app must have clickable surface
-           - Key interaction areas (buttons, tabs) remain accessible
-           - No app ever completely hidden behind others
-        
-        LAYOUT ANALYSIS & PROBLEM IDENTIFICATION:
-        Before choosing tools, analyze the current window layout:
-        
-        **Screen Coverage Analysis:**
-        - Target: 90-100% screen coverage for maximum efficiency
-        - Identify wasted space (large gaps, tiny windows)
-        - Look for windows positioned off-screen or overlapping poorly
-        
-        **Window Sizing Problems:**
-        - Windows too narrow (< 30% width) may need expansion
-        - Windows too short (< 40% height) may need expansion
-        - Oversized windows (> 90% single dimension) may need smart sizing
-        
-        **Positioning Problems:**
-        - Windows clustered in one area leaving empty space
-        - Windows positioned at extreme edges (> 90% x/y) may be off-screen
-        - Poor cascade/overlap arrangements hiding important content
-        
-        **Multi-Window Conflicts:**
-        - Identify which windows overlap and whether it's efficient
-        - Look for windows that could be better positioned relative to each other
-        - Find opportunities to create better visual hierarchy
-        
-        **Solution Strategy:**
-        1. Position each app to maximize its utility while coordinating with others
-        2. Arrange all windows to be accessible and properly visible
-        3. Use precise positioning to eliminate wasted space
-        4. Ensure every app has clickable surface area
-        
-        FLEXIBILITY FOR USER PREFERENCE:
-        While cascade is default, respect when users want simple layouts:
-        - "Just Terminal and Xcode" → Simple side-by-side if that's what they want
-        - "Lock me in" → Minimal layout with just requested apps
-        - But always be ready to cascade when multiple apps are needed
-        
-        COMPREHENSIVE WINDOW MANAGEMENT:
-        When users request window arrangement (like "rearrange my windows"), operate on ALL visible windows unless specifically limited:
-        - Use `flexible_position` calls for every visible window that needs positioning
-        - Create coordinated layouts where each window has its optimal position and size
-        - Ensure every window is accessible and properly positioned for its function
-        - Don't limit yourself to just a few "key" windows - arrange the complete workspace
-        
-        UNIFIED TOOL USAGE:
-        Use `flexible_position` for ALL window operations:
-        
-        **For window positioning:**
-        - Use `flexible_position` with precise percentage coordinates (e.g., x_position: "25", y_position: "10")
-        - Set width and height as percentages (e.g., width: "50", height: "75")
-        - Control layer/z-index for proper window stacking (0=back, 3=front)
-        - Set focus: true for the primary window the user should be working in
-        
-        **For window lifecycle (opening, minimizing, focusing):**
-        - Use `flexible_position` with lifecycle parameters:
-          - open: true → Launch app if not running
-          - minimize: true → Minimize window, minimize: false → Ensure not minimized
-          - focus: true → Focus window (brings to front, activates app)
-          - restore: true → Restore/unminimize window before positioning
-        
-        **For simple operations like "focus Safari":**
-        - Use `flexible_position` with just app_name and focus: true
-        - No positioning coordinates needed for focus-only operations
-        
-        **For complex arrangements:**
-        - Use multiple `flexible_position` calls to create coordinated layouts
-        - Use archetype behavior patterns to guide intelligent positioning
-        - Every window that needs to be arranged should get its own `flexible_position` call
-        
-        **Decision criteria:**
-        - Always use `flexible_position` for any window operation
-        - Use coordinates when positioning is needed
-        - Use lifecycle parameters when opening/minimizing/focusing is needed
-        - Use `close_app` only when user specifically wants to close/quit an app
-        - When making sweeping changes (ie. things that you think should take up the whole screen like 'research' or 'open safari in fullscreen' or 'i want to code') -> Minimize everything that wasn't part of your action that is currently open first
-        - When making finite changes (ie. things that don't take up the whole screen like 'move terminal to the right 1/3' or 'put claude in the top right quarter and terminal in the bottom right quarter') -> Do not minimize everything that wasn't part of the action
-
-        **EXAMPLES TO BASE ACTIONS OFF OF:**
-
-        Before getting into examples here are some general requirements that you will see in the examples:
-        - EVERY window should have at least a 100px by 100px area where no other window is underneath it or covering it
-        - 100 percent of the screen must be filled, no matter what
-        - If you cannot fit windows into a screen without sacrificing 1 or more of these conditions, minimize windows that don't seem as important until they can fit
-        
-        User prompt:
-        "code"
-        
-        Expected output:
-        "toolCalls":["flexible_position(\n    app_name: \"Terminal\",\n    x_position: \"66.7\",\n    y_position: \"2.8\",\n    width: \"33.3\",\n    height: \"97.2\",\n    layer: \"3\",\n    focus: \"true\"\n)","flexible_position(\n    app_name: \"Xcode\",\n    x_position: \"-0.0\",\n    y_position: \"2.8\",\n    width: \"66.7\",\n    height: \"88.3\",\n    layer: \"2\",\n    focus: \"false\"\n)","flexible_position(\n    app_name: \"Arc\",\n    x_position: \"0.0\",\n    y_position: \"12.6\",\n    width: \"66.7\",\n    height: \"87.4\",\n    layer: \"1\",\n    focus: \"false\"\n)"]
-        
-        User prompt:
-        "research"
-        
-        Expected output:
-        "toolCalls":["flexible_position(\n    app_name: \"Arc\",\n    x_position: \"-0.0\",\n    y_position: \"2.8\",\n    width: \"49.9\",\n    height: \"97.2\",\n    layer: \"2\",\n    focus: \"false\"\n)","flexible_position(\n    app_name: \"Claude\",\n    x_position: \"50.0\",\n    y_position: \"15.8\",\n    width: \"50.0\",\n    height: \"84.2\",\n    layer: \"1\",\n    focus: \"false\"\n)","flexible_position(\n    app_name: \"Notion\",\n    x_position: \"50.0\",\n    y_position: \"2.8\",\n    width: \"50.0\",\n    height: \"84.6\",\n    layer: \"0\",\n    focus: \"false\"\n)"]
-        
-        User prompt:
-        "focus Safari"
-        
-        Expected output:
-        "toolCalls":["flexible_position(\n    app_name: \"Safari\",\n    focus: \"true\"\n)"]
-        
-        User prompt:
-        "minimize all windows"
-        
-        Expected output:
-        "toolCalls":["flexible_position(\n    app_name: \"Terminal\",\n    minimize: \"true\"\n)","flexible_position(\n    app_name: \"Xcode\",\n    minimize: \"true\"\n)","flexible_position(\n    app_name: \"Arc\",\n    minimize: \"true\"\n)"]
-        Note for "minimize all windowsm":
-        Expected: Only minimize currently visible windows
-        WRONG: Don't scan entire system for every possible app"
-        
-        NEVER:
-        - Assume fixed positions for app types
-        - Suggest apps the user doesn't use
-        - Limit yourself to predetermined layouts
+        EXAMPLES:
+        "unminimize all windows" → flexible_position(app_name: "AppName", minimize: false) for each minimized window
+        "focus Safari" → flexible_position(app_name: "Safari", focus: true)
+        "code" → Position Terminal (side), IDE (main), Browser (cascade)
         """
         
-        // Add user-specific preferences if any exist
-        prompt += UserLayoutPreferences.shared.generatePreferenceString()
-        
-        // Add user instructions from natural language preferences
-        prompt += UserInstructionParser.shared.generateInstructionString()
-        
-        // Add intelligent pattern hints
-        prompt += patternHints
-        
-        // Add app archetype classifications for current apps
-        if let context = context, !context.runningApps.isEmpty {
-            prompt += "\n\nAPP ARCHETYPE CLASSIFICATIONS:\n"
-            for app in context.runningApps {
-                let archetype = AppArchetypeClassifier.shared.classifyApp(app)
-                prompt += "- \(app): \(archetype.displayName) (\(archetype.cascadeStrategy))\n"
-            }
-        }
-        
-        // Add user preference data from corrections
-        let userPrefs = UserPreferenceTracker.shared.generatePreferenceSummary(context: "coding")
-        if !userPrefs.isEmpty {
-            prompt += "\n\(userPrefs)"
-        }
-        
-        // Add coordinated positioning instructions
-        prompt += """
-        
-        REMEMBER: SCREEN UTILIZATION IS IMPORTANT - expand all windows to achieve 100% coverage!
-        
-        FUNCTION CALLING REQUIREMENTS:
-        - ALWAYS use the provided function tools for ANY window management request
-        - NEVER explain what you will do - just use the functions immediately
-        - For "move terminal to the left" → call snap_window(app_name: "Terminal", position: "left")
-        - For "resize Arc bigger" → call resize_window(app_name: "Arc", size: "large")
-        - For positioning commands → use flexible_position for precise control
-        - MANDATORY: Every user request MUST result in function calls, not text responses
-        
-        CONSTRAINT ENFORCEMENT PROTOCOL:
-        1. BEFORE making ANY flexible_position calls, perform mathematical validation
-        2. If ANY window would violate the 100×100px constraint, REJECT that layout
-        3. Find alternative positions that satisfy ALL constraints
-        4. NEVER proceed with invalid layouts - constraints are NON-NEGOTIABLE
-        5. If no valid layout exists, minimize less important windows until constraints satisfied
-        
-        VALIDATION EXAMPLES (MANDATORY PROCESS):
-        
-        Example 1: Valid placement
-        Current: Safari[0,0,400,300,L1]
-        Action: Place Terminal[350,250,300,200,L2]
-        
-        VALIDATION STEPS:
-        1. Check overlap: Safari∩Terminal = [350,250,50,50]
-        2. Calculate visible areas:
-           - Safari.visible = (400×300) - (50×50) = 120,000 - 2,500 = 117,500px² ✓
-           - Terminal.visible = 300×200 = 60,000px² ✓
-        3. Both > 10,000px² → VALID placement
-        
-        Example 2: Invalid placement requiring correction
-        Current: Finder[0,0,150,150,L1]
-        Action: Place Chrome[0,0,200,200,L2]
-        
-        VALIDATION STEPS:
-        1. Check overlap: Finder∩Chrome = [0,0,150,150] (complete overlap)
-        2. Calculate visible areas:
-           - Finder.visible = (150×150) - (150×150) = 22,500 - 22,500 = 0px² ✗
-           - Chrome.visible = 200×200 = 40,000px² ✓
-        3. Finder has 0px² visible → INVALID placement
-        4. ALTERNATIVE: Move Chrome to [100,100,200,200,L2]
-           - New overlap: [100,100,50,50]
-           - Finder.visible = 22,500 - 2,500 = 20,000px² ✓
-        
-        Example 3: Multi-window constraint validation
-        Current: Arc[0,0,800,600,L1], Terminal[400,300,400,300,L2]
-        Action: Place Cursor[200,150,600,450,L3]
-        
-        VALIDATION STEPS:
-        1. Calculate overlaps:
-           - Arc∩Cursor = [200,150,600,450] = 270,000px²
-           - Terminal∩Cursor = [400,300,400,300] = 120,000px²
-        2. Calculate visible areas:
-           - Arc.visible = (800×600) - (600×450) = 480,000 - 270,000 = 210,000px² ✓
-           - Terminal.visible = (400×300) - (400×300) = 120,000 - 120,000 = 0px² ✗
-           - Cursor.visible = 600×450 = 270,000px² ✓
-        3. Terminal violates constraint → REPOSITION REQUIRED
-        4. ALTERNATIVE: Move Cursor to [200,0,600,400,L3]
-           - Arc∩Cursor = [200,0,600,400] = 240,000px²
-           - Terminal∩Cursor = [400,300,400,100] = 40,000px²
-           - Arc.visible = 480,000 - 240,000 = 240,000px² ✓
-           - Terminal.visible = 120,000 - 40,000 = 80,000px² ✓
-           - Cursor.visible = 600×400 = 240,000px² ✓
-        
-        CRITICAL: You MUST perform this validation for EVERY window arrangement. If ANY window violates the 100×100px constraint, you MUST find an alternative layout.
-        
-        """
         
         if let context = context {
-            prompt += "\n\nCURRENT SYSTEM STATE:\n"
-            prompt += "Running apps: \(context.runningApps.joined(separator: ", "))\n"
+            prompt += "\n\nSYSTEM STATE:\n"
             
-            // Display configuration with optimization hints
-            prompt += "\nDISPLAY CONFIGURATION:\n"
-            for (index, resolution) in context.screenResolutions.enumerated() {
-                let isMain = index == 0
-                let width = Int(resolution.width)
-                let height = Int(resolution.height)
+            // Display info
+            let mainDisplay = context.screenResolutions.first ?? CGSize(width: 1440, height: 900)
+            prompt += "Display: \(Int(mainDisplay.width))x\(Int(mainDisplay.height))\n"
+            
+            // Current windows (limit to 8 most relevant)
+            let relevantWindows = context.visibleWindows.prefix(8)
+            prompt += "Windows:\n"
+            for window in relevantWindows {
+                let bounds = window.bounds
+                let widthPercent = (bounds.width / mainDisplay.width) * 100
+                let heightPercent = (bounds.height / mainDisplay.height) * 100
                 
-                // Add display-specific optimization hints
-                var displayHint = ""
-                if width <= 1920 && height <= 1080 {
-                    displayHint = " → Small display: use aggressive cascading (60-70% overlap), narrow windows (30-40% width)"
-                } else if width <= 2560 && height <= 1440 {
-                    displayHint = " → Medium display: balanced cascading (40-50% overlap), standard windows (35-45% width)"
-                } else if width >= 3440 && height <= 1600 {
-                    displayHint = " → Ultra-wide display: prefer side-by-side arrangements, minimal overlaps"
-                } else {
-                    displayHint = " → Large display: minimal cascading (20-30% overlap), wider windows (40-60% width)"
-                }
-                
-                prompt += "Display \(index): \(width)x\(height)\(isMain ? " (Main)" : "")\(displayHint)\n"
+                prompt += "- \(window.appName): \(String(format: "%.0f", widthPercent))%w × \(String(format: "%.0f", heightPercent))%h"
+                if window.isMinimized { prompt += " [MIN]" }
+                prompt += "\n"
             }
             
-            // SYMBOLIC WINDOW LAYOUT ANALYSIS WITH CONSTRAINT VALIDATION
-            if !context.visibleWindows.isEmpty {
-                prompt += "\nCURRENT WINDOW LAYOUT:\n"
-                
-                // Convert to WindowState objects for symbolic analysis
-                let windowStates = WorkspaceAnalyzer.shared.convertToWindowStates(context.visibleWindows)
-                let validator = ConstraintValidator.shared
-                let validation = validator.validateConstraints(windows: windowStates)
-                
-                // Display windows with symbolic notation
-                for window in windowStates.sorted(by: { $0.layer > $1.layer }) {
-                    let bounds = window.frame
-                    let displayIndex = window.displayIndex
-                    
-                    // Use the correct display for percentage calculations
-                    let displayResolution = (displayIndex >= 0 && displayIndex < context.screenResolutions.count) 
-                        ? context.screenResolutions[displayIndex] 
-                        : (context.screenResolutions.first ?? CGSize(width: 1440, height: 900))
-                    
-                    let widthPercent = (bounds.width / displayResolution.width) * 100
-                    let heightPercent = (bounds.height / displayResolution.height) * 100
-                    
-                    prompt += "- \(window.symbolicNotation) - \(String(format: "%.0f", widthPercent))%w × \(String(format: "%.0f", heightPercent))%h"
-                    
-                    if window.isMinimized {
-                        prompt += " [MINIMIZED]"
-                    }
-                    
-                    prompt += "\n"
-                }
-                
-                // Add overlap analysis
-                if !validation.overlaps.isEmpty {
-                    prompt += "\nOVERLAP ANALYSIS:\n"
-                    var processedPairs: Set<String> = []
-                    
-                    for (_, windowOverlaps) in validation.overlaps {
-                        for overlap in windowOverlaps {
-                            let pairKey = [overlap.window1, overlap.window2].sorted().joined(separator: "-")
-                            
-                            if !processedPairs.contains(pairKey) {
-                                prompt += "- \(overlap.symbolicNotation)\n"
-                                processedPairs.insert(pairKey)
-                            }
-                        }
-                    }
-                }
-                
-                // Add constraint validation results
-                if !validation.violations.isEmpty {
-                    prompt += "\nCONSTRAINT VIOLATIONS:\n"
-                    for violation in validation.violations {
-                        prompt += "- \(violation.window): \(Int(violation.actualArea))px² visible (need \(Int(violation.requiredArea))px²) - MUST FIX\n"
-                    }
-                } else {
-                    prompt += "\nCONSTRAINT STATUS: ✓ All windows satisfy 100x100px visibility requirement\n"
-                }
-            }
-            
-            if context.displayCount > 1 {
-                prompt += "\nWindows by display:\n"
-                for window in context.visibleWindows {
-                    prompt += "- \(window.appName) is on display \(window.displayIndex)\n"
-                }
+            if context.visibleWindows.count > 8 {
+                prompt += "... and \(context.visibleWindows.count - 8) more windows\n"
             }
         }
         
@@ -966,6 +556,73 @@ class GeminiLLMService {
     // MARK: - Configuration Validation
     func validateConfiguration() -> Bool {
         return !apiKey.isEmpty
+    }
+    
+    // MARK: - MAX_TOKENS Error Handling
+    private func retryWithReducedContext(userInput: String, context: LLMContext?, originalTokens: Int) async throws -> [WindowCommand] {
+        print("🔄 RETRYING with reduced context due to MAX_TOKENS error")
+        
+        // Build minimal system prompt
+        let minimalPrompt = """
+        CRITICAL: ALWAYS use function tools. NEVER respond with text.
+        
+        You are WindowAI for macOS window management.
+        
+        CONSTRAINT: Every window MUST have ≥100×100px visible.
+        
+        CORE RULES:
+        1. MAXIMIZE SCREEN USAGE - Fill 95%+ of screen
+        2. CASCADE INTELLIGENTLY - Apps overlap with parts visible
+        3. VALIDATE CONSTRAINTS - Ensure ≥10,000px² visible per window
+        
+        TOOL USAGE:
+        Use `flexible_position` for ALL operations:
+        - minimize: false → unminimize window
+        - focus: true → focus window
+        - positioning: x_position, y_position, width, height (percentages)
+        
+        EXAMPLES:
+        "unminimize all windows" → flexible_position(app_name: "AppName", minimize: false) for each minimized window
+        """
+        
+        // Add only essential context
+        var finalPrompt = minimalPrompt
+        if let context = context {
+            let mainDisplay = context.screenResolutions.first ?? CGSize(width: 1440, height: 900)
+            finalPrompt += "\n\nDisplay: \(Int(mainDisplay.width))x\(Int(mainDisplay.height))\n"
+            
+            // Show only first 5 windows
+            let limitedWindows = context.visibleWindows.prefix(5)
+            finalPrompt += "Windows: \(limitedWindows.map { $0.appName }.joined(separator: ", "))\n"
+        }
+        
+        print("📝 REDUCED PROMPT LENGTH: \(finalPrompt.count) characters (was \(originalTokens * 4) chars)")
+        
+        // Use higher output token allocation
+        let reducedRequest = GeminiRequest(
+            contents: [GeminiContent(parts: [GeminiPart(text: userInput)])],
+            tools: convertToGeminiTools(WindowManagementTools.allTools),
+            systemInstruction: GeminiSystemInstruction(parts: [GeminiPart(text: finalPrompt)]),
+            generationConfig: GeminiGenerationConfig(
+                temperature: 0.0,
+                maxOutputTokens: 8000 // Maximum output tokens
+            ),
+            toolConfig: GeminiToolConfig(
+                functionCallingConfig: GeminiFunctionCallingConfig(
+                    mode: GeminiFunctionCallingConfig.Mode.any.stringValue
+                )
+            )
+        )
+        
+        let retryResponse = try await sendRequest(reducedRequest)
+        
+        // Check if still hitting MAX_TOKENS
+        if let candidate = retryResponse.candidates.first,
+           candidate.finishReason == "MAX_TOKENS" {
+            print("❌ Still hitting MAX_TOKENS after retry - proceeding with partial response")
+        }
+        
+        return try parseCommandsFromResponse(retryResponse)
     }
     
     // MARK: - Constraint Enforcement and Retry Logic
