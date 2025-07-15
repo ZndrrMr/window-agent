@@ -204,26 +204,26 @@ class ConstraintValidationTest {
     private func testWorkspaceAnalysis() {
         print("\n🔍 Test 6: Workspace Analysis")
         
-        // Create mock WindowInfo objects
-        let windowInfo1 = WindowInfo(
-            id: "1",
+        // Create mock WindowSummary objects
+        let windowSummary1 = LLMContext.WindowSummary(
+            title: "Arc - New Tab",
             appName: "Arc",
             bounds: CGRect(x: 0, y: 0, width: 800, height: 600),
-            displayIndex: 0,
-            isMinimized: false
+            isMinimized: false,
+            displayIndex: 0
         )
         
-        let windowInfo2 = WindowInfo(
-            id: "2",
+        let windowSummary2 = LLMContext.WindowSummary(
+            title: "Terminal - bash",
             appName: "Terminal",
             bounds: CGRect(x: 600, y: 400, width: 400, height: 300),
-            displayIndex: 0,
-            isMinimized: false
+            isMinimized: false,
+            displayIndex: 0
         )
         
-        let windowInfos = [windowInfo1, windowInfo2]
+        let windowSummaries = [windowSummary1, windowSummary2]
         let analyzer = WorkspaceAnalyzer.shared
-        let analysis = analyzer.analyzeWorkspace(windowInfos)
+        let analysis = analyzer.analyzeWorkspace(windowSummaries)
         
         print("   ✓ Total windows: \(analysis.totalWindows)")
         print("   ✓ Constraint violations: \(analysis.constraintViolations)")
@@ -233,7 +233,7 @@ class ConstraintValidationTest {
         }
         
         // Test LLM context generation
-        let llmContext = analyzer.generateLLMContext(from: windowInfos)
+        let llmContext = analyzer.generateLLMContext(from: windowSummaries)
         assert(llmContext.contains("SYMBOLIC WINDOW ANALYSIS"), "LLM context should contain symbolic analysis")
         
         print("   ✓ LLM context generated successfully")

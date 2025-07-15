@@ -277,21 +277,21 @@ class WorkspaceAnalyzer {
     
     private init() {}
     
-    // Convert WindowInfo to WindowState with layer assignment
-    func convertToWindowStates(_ windowInfos: [WindowInfo]) -> [WindowState] {
+    // Convert WindowSummary to WindowState with layer assignment
+    func convertToWindowStates(_ windowSummaries: [LLMContext.WindowSummary]) -> [WindowState] {
         var windowStates: [WindowState] = []
         
-        for (index, windowInfo) in windowInfos.enumerated() {
+        for (index, windowSummary) in windowSummaries.enumerated() {
             // Assign layers based on z-order (front to back)
-            let layer = windowInfos.count - index
+            let layer = windowSummaries.count - index
             
             let windowState = WindowState(
-                app: windowInfo.appName,
-                id: windowInfo.id ?? UUID().uuidString,
-                frame: windowInfo.bounds,
+                app: windowSummary.appName,
+                id: UUID().uuidString, // Generate ID since WindowSummary doesn't have it
+                frame: windowSummary.bounds,
                 layer: layer,
-                displayIndex: windowInfo.displayIndex,
-                isMinimized: windowInfo.isMinimized
+                displayIndex: windowSummary.displayIndex,
+                isMinimized: windowSummary.isMinimized
             )
             
             windowStates.append(windowState)
@@ -301,16 +301,16 @@ class WorkspaceAnalyzer {
     }
     
     // Generate LLM context with symbolic analysis
-    func generateLLMContext(from windowInfos: [WindowInfo]) -> String {
-        let windowStates = convertToWindowStates(windowInfos)
+    func generateLLMContext(from windowSummaries: [LLMContext.WindowSummary]) -> String {
+        let windowStates = convertToWindowStates(windowSummaries)
         let validator = ConstraintValidator.shared
         
         return validator.generateSymbolicAnalysis(windows: windowStates)
     }
     
     // Analyze workspace and suggest improvements
-    func analyzeWorkspace(_ windowInfos: [WindowInfo]) -> WorkspaceAnalysis {
-        let windowStates = convertToWindowStates(windowInfos)
+    func analyzeWorkspace(_ windowSummaries: [LLMContext.WindowSummary]) -> WorkspaceAnalysis {
+        let windowStates = convertToWindowStates(windowSummaries)
         let validator = ConstraintValidator.shared
         let validation = validator.validateConstraints(windows: windowStates)
         
