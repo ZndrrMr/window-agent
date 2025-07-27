@@ -726,6 +726,16 @@ Claude Code is granted MAXIMUM permissions for this project:
 - **Mock LLM responses for reliable testing** - WRITE TESTS FIRST
 - **Permission mocking for automated testing** - WRITE TESTS FIRST
 
+### System Prompt Development Guidelines - **CRITICAL RULE**
+- **Keep system prompts simple and concrete** - NEVER add explanatory context from development discussions
+- **User explanations are for implementation understanding only** - DO NOT put user's reasoning/context into LLM prompts
+- **Minimize prompt complexity** - Remove abstract language, avoid cognitive overload
+- **Use concrete examples over abstract rules** - Show specific coordinates/positioning instead of general principles
+- **No meta-commentary in prompts** - Don't explain why rules exist or add guidance about "usually" or "typically"
+- **Essential information only** - If the user doesn't explicitly say to add something to the prompt, don't add it
+
+**Example**: If user says "the LLM should usually keep ~5 relevant apps" → DO NOT add this to system prompt. The LLM should figure out relevance naturally without guidance about quantities.
+
 ## Implementation Status
 
 ### Completed ✅ **FAR MORE ADVANCED THAN DOCUMENTED**

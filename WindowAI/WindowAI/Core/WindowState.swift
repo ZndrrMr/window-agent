@@ -48,10 +48,13 @@ struct WindowState {
         return frame.width * frame.height
     }
     
-    // Check if this window satisfies the 100x100 visibility constraint
+    // Check if this window satisfies the clickable area constraint
     var satisfiesVisibilityConstraint: Bool {
+        // Minimized windows don't need visible area
+        if isMinimized { return true }
+        
         guard let visible = visibleArea else { return false }
-        return visible >= 10000 // 100x100 = 10,000 pixels
+        return visible >= 1600 // 40x40 = 1,600 pixels (enough for clickable area)
     }
 }
 
@@ -128,7 +131,7 @@ class ConstraintValidator {
     }
     
     // Calculate visible area for a window considering layer hierarchy
-    func calculateVisibleArea(for window: WindowState, overlaps: [Overlap]) -> CGFloat {
+    func calculateVisibleArea(for window: WindowState, overlaps: [Overlap], allWindows: [WindowState]) -> CGFloat {
         var visibleArea = window.totalArea
         
         // Subtract areas where this window is occluded by higher-layer windows
@@ -136,15 +139,23 @@ class ConstraintValidator {
             // Find the other window in this overlap
             let otherWindowApp = overlap.window1 == window.app ? overlap.window2 : overlap.window1
             
-            // We need to find the other window's layer to determine occlusion
-            // This would require access to the full window list, so we'll implement this
-            // in the workspace analyzer below
+            // Find the other window's layer to determine occlusion
+            if let otherWindow = allWindows.first(where: { $0.app == otherWindowApp }) {
+                // If other window has higher layer (closer to user), it occludes this window
+                if otherWindow.layer > window.layer {
+                    // Subtract the overlap area - this window is partially or fully occluded
+                    visibleArea -= overlap.area
+                    print("🔍 Occlusion: \(window.app) occluded by \(otherWindow.app) (area: \(Int(overlap.area))px²)")
+                }
+            }
         }
         
-        return max(visibleArea, 0)
+        let finalVisibleArea = max(visibleArea, 0)
+        print("🔍 Visible Area: \(window.app) = \(Int(finalVisibleArea))px² (was \(Int(window.totalArea))px²)")
+        return finalVisibleArea
     }
     
-    // Validate that all windows satisfy the 100x100 constraint
+    // Validate that all windows satisfy the 40x40 clickable area constraint
     func validateConstraints(windows: [WindowState]) -> ConstraintValidationResult {
         var validatedWindows: [WindowState] = []
         var violations: [ConstraintViolation] = []
@@ -157,26 +168,16 @@ class ConstraintValidator {
         
         // Calculate visible area for each window
         for window in sortedWindows {
-            let windowOverlaps = overlaps[window.app] ?? []
-            
-            // Calculate visible area considering layer hierarchy
-            var visibleArea = window.totalArea
-            
-            // Subtract areas where this window is occluded
-            for overlap in windowOverlaps {
-                let otherWindowApp = overlap.window1 == window.app ? overlap.window2 : overlap.window1
-                
-                // Find the other window's layer
-                if let otherWindow = windows.first(where: { $0.app == otherWindowApp }) {
-                    // If other window has higher layer, it occludes this window
-                    if otherWindow.layer > window.layer {
-                        visibleArea -= overlap.area
-                    }
-                }
+            // Skip constraint validation for minimized windows
+            if window.isMinimized {
+                validatedWindows.append(window)
+                continue
             }
             
-            // Ensure visible area doesn't go negative
-            visibleArea = max(visibleArea, 0)
+            let windowOverlaps = overlaps[window.app] ?? []
+            
+            // Use the fixed visible area calculation
+            let visibleArea = calculateVisibleArea(for: window, overlaps: windowOverlaps, allWindows: windows)
             
             // Create updated window state with visible area
             let updatedWindow = WindowState(
@@ -188,19 +189,15 @@ class ConstraintValidator {
                 isMinimized: window.isMinimized
             )
             
-            // Update the visible area (would need to modify struct to be mutable)
-            var mutableWindow = updatedWindow
-            // Note: This would require making visibleArea mutable in the struct
-            
             validatedWindows.append(updatedWindow)
             
-            // Check constraint violation
-            if visibleArea < 10000 {
+            // Check constraint violation - reduced requirement for clickable area
+            if visibleArea < 1600 {
                 let violation = ConstraintViolation(
                     window: window.app,
-                    requiredArea: 10000,
+                    requiredArea: 1600,
                     actualArea: visibleArea,
-                    difference: 10000 - visibleArea
+                    difference: 1600 - visibleArea
                 )
                 violations.append(violation)
             }
@@ -245,7 +242,7 @@ class ConstraintValidator {
         analysis += "\nCONSTRAINT VALIDATION:\n"
         
         if validation.violations.isEmpty {
-            analysis += "✓ All windows satisfy 100x100px visibility constraint\n"
+            analysis += "✓ All windows satisfy 40×40px clickable area constraint\n"
         } else {
             analysis += "✗ \(validation.violations.count) constraint violations found:\n"
             for violation in validation.violations {

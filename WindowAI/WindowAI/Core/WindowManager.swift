@@ -702,10 +702,29 @@ class WindowManager {
         print("   Input bounds: \(bounds)")
         print("   Validate: \(validate)")
         
+        // FIXED: Get current bounds BEFORE attempting to move
+        let currentBounds = windowInfo.bounds
+        print("   Current bounds: \(currentBounds)")
+        
         // Validate bounds against app constraints and screen bounds (unless disabled)
         let finalBounds = validate ? validateWindowBounds(bounds, for: windowInfo.appName) : bounds
         print("   Final bounds: \(finalBounds)")
         print("   Bounds changed by validation: \(bounds != finalBounds)")
+        
+        // FIXED: Check if window is already at target position/size (within 5px tolerance)
+        let positionTolerance: CGFloat = 5.0
+        let positionAlreadyCorrect = abs(currentBounds.origin.x - finalBounds.origin.x) < positionTolerance &&
+                                   abs(currentBounds.origin.y - finalBounds.origin.y) < positionTolerance
+        let sizeAlreadyCorrect = abs(currentBounds.width - finalBounds.width) < positionTolerance &&
+                               abs(currentBounds.height - finalBounds.height) < positionTolerance
+        
+        if positionAlreadyCorrect && sizeAlreadyCorrect {
+            print("   ✅ Window already at target position/size - no movement needed")
+            return true
+        }
+        
+        print("   📍 Position needs change: \(!positionAlreadyCorrect)")
+        print("   📏 Size needs change: \(!sizeAlreadyCorrect)")
         
         let positionValue = AXValueCreate(.cgPoint, withUnsafePointer(to: finalBounds.origin) { $0 })
         let sizeValue = AXValueCreate(.cgSize, withUnsafePointer(to: finalBounds.size) { $0 })
@@ -716,7 +735,25 @@ class WindowManager {
         print("   Position result: \(positionResult == .success ? "SUCCESS" : "FAILED (\(positionResult))")")
         print("   Size result: \(sizeResult == .success ? "SUCCESS" : "FAILED (\(sizeResult))")")
         
+        // FIXED: Verify actual movement occurred after API calls
+        let newBounds = getCurrentWindowBounds(windowInfo)
+        let actualPositionChange = abs(newBounds.origin.x - currentBounds.origin.x) > positionTolerance ||
+                                 abs(newBounds.origin.y - currentBounds.origin.y) > positionTolerance
+        let actualSizeChange = abs(newBounds.width - currentBounds.width) > positionTolerance ||
+                             abs(newBounds.height - currentBounds.height) > positionTolerance
+        
         let overallSuccess = positionResult == .success && sizeResult == .success
+        
+        if overallSuccess {
+            if actualPositionChange || actualSizeChange {
+                print("   ✅ Window successfully moved: pos_change=\(actualPositionChange), size_change=\(actualSizeChange)")
+            } else {
+                print("   ⚠️ API reported success but window didn't actually move (may already be at target)")
+            }
+        } else {
+            print("   ❌ Window movement FAILED - API returned error")
+        }
+        
         print("   Overall success: \(overallSuccess)")
         
         return overallSuccess
@@ -756,6 +793,12 @@ class WindowManager {
             return minimized
         }
         return false
+    }
+    
+    func isWindowMinimizedAsync(_ windowInfo: WindowInfo) async -> Bool {
+        return await Task {
+            return isWindowMinimized(windowInfo)
+        }.value
     }
     
     func zoomWindow(_ windowInfo: WindowInfo) -> Bool {
@@ -1087,6 +1130,33 @@ extension WindowManager {
 
 // MARK: - Helper Extensions
 extension WindowManager {
+    // Get current window bounds by reading from Accessibility API
+    func getCurrentWindowBounds(_ windowInfo: WindowInfo) -> CGRect {
+        guard checkAccessibilityPermissions() else { return windowInfo.bounds }
+        
+        var position: CFTypeRef?
+        var size: CFTypeRef?
+        
+        let posResult = AXUIElementCopyAttributeValue(windowInfo.windowRef, kAXPositionAttribute as CFString, &position)
+        let sizeResult = AXUIElementCopyAttributeValue(windowInfo.windowRef, kAXSizeAttribute as CFString, &size)
+        
+        if posResult == .success && sizeResult == .success,
+           let posValue = position,
+           let sizeValue = size {
+            
+            var origin = CGPoint.zero
+            var currentSize = CGSize.zero
+            
+            AXValueGetValue(posValue as! AXValue, .cgPoint, &origin)
+            AXValueGetValue(sizeValue as! AXValue, .cgSize, &currentSize)
+            
+            return CGRect(origin: origin, size: currentSize)
+        }
+        
+        // Fallback to cached bounds if API call fails
+        return windowInfo.bounds
+    }
+    
     func getWindowAtPosition(_ position: CGPoint) -> WindowInfo? {
         let allWindows = getAllWindows()
         

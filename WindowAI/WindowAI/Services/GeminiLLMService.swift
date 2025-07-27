@@ -237,7 +237,7 @@ class GeminiLLMService {
             }
         }
         
-        let systemPrompt = buildSystemPrompt(context: context)
+        let systemPrompt = buildSystemPrompt(context: context, userInput: userInput)
         print("📝 SYSTEM PROMPT LENGTH: \(systemPrompt.count) characters")
         
         // Calculate dynamic token limit with higher allocation for output
@@ -282,9 +282,15 @@ class GeminiLLMService {
         
         let commands = try parseCommandsFromResponse(response)
         
-        // Validate command constraints and retry if needed
+        // Enhanced debug analysis of LLM decisions
+        analyzeWindowCoverage(commands: commands, context: context, userInput: userInput)
+        
+        // Add missing priority windows if needed
+        let enhancedCommands = try await ensurePriorityWindowCoverage(commands: commands, context: context, userInput: userInput, originalPrompt: systemPrompt)
+        
+        // Re-enable constraint validation with fixes applied
         if let context = context {
-            let validatedCommands = try await enforceConstraints(commands, context: context, userInput: userInput, originalPrompt: systemPrompt)
+            let validatedCommands = try await enforceConstraints(enhancedCommands, context: context, userInput: userInput, originalPrompt: systemPrompt)
             
             // Debug: Compare tool calls generated vs windows available
             print("📈 ANALYSIS: Generated \(validatedCommands.count) tool calls for \(windowCount) available windows")
@@ -297,13 +303,141 @@ class GeminiLLMService {
         }
         
         // Debug: Compare tool calls generated vs windows available
-        print("📈 ANALYSIS: Generated \(commands.count) tool calls for \(windowCount) available windows")
-        if commands.count < windowCount && windowCount > 3 {
-            print("⚠️  NOTE: Only \(commands.count) windows positioned out of \(windowCount) available")
+        print("📈 ANALYSIS: Generated \(enhancedCommands.count) tool calls for \(windowCount) available windows")
+        if enhancedCommands.count < windowCount && windowCount > 3 {
+            print("⚠️  NOTE: Only \(enhancedCommands.count) windows positioned out of \(windowCount) available")
             print("   Consider if all windows should be arranged for comprehensive layout")
         }
         
-        return commands
+        return enhancedCommands
+    }
+    
+    // MARK: - Priority Window Coverage
+    private func ensurePriorityWindowCoverage(commands: [WindowCommand], context: LLMContext?, userInput: String, originalPrompt: String) async throws -> [WindowCommand] {
+        guard let context = context else { return commands }
+        
+        // Check if this is a rearrange command that should handle all windows
+        let isRearrangeCommand = userInput.lowercased().contains("rearrange") || 
+                                 userInput.lowercased().contains("arrange") ||
+                                 userInput.lowercased().contains("layout")
+        
+        if !isRearrangeCommand {
+            return commands // Only enhance for rearrange commands
+        }
+        
+        // Get all unminimized windows
+        let unminimizedWindows = context.visibleWindows.filter { !$0.isMinimized }
+        
+        // Get apps that received commands
+        let commandedApps = Set(commands.map { command in
+            command.target
+        })
+        
+        // Find missing priority apps
+        let priorityApps = ["Claude", "Cursor", "Xcode", "Arc", "Terminal", "Figma", "Notion"]
+        let missingPriorityApps = unminimizedWindows.filter { window in
+            priorityApps.contains(window.appName) && !commandedApps.contains(window.appName)
+        }
+        
+        if missingPriorityApps.isEmpty {
+            return commands // All priority apps are covered
+        }
+        
+        print("\n🔄 PRIORITY WINDOW ENHANCEMENT:")
+        print("Missing priority apps: \(missingPriorityApps.map { $0.appName }.joined(separator: ", "))")
+        
+        // Build enhanced prompt that emphasizes missing priority apps
+        let enhancedPrompt = buildPriorityEnhancedPrompt(originalPrompt: originalPrompt, missingApps: missingPriorityApps, context: context)
+        
+        let retryRequest = GeminiRequest(
+            contents: [GeminiContent(parts: [GeminiPart(text: userInput)])],
+            tools: convertToGeminiTools(WindowManagementTools.allTools),
+            systemInstruction: GeminiSystemInstruction(parts: [GeminiPart(text: enhancedPrompt)]),
+            generationConfig: GeminiGenerationConfig(
+                temperature: 0.1,
+                maxOutputTokens: 6000
+            ),
+            toolConfig: GeminiToolConfig(
+                functionCallingConfig: GeminiFunctionCallingConfig(
+                    mode: GeminiFunctionCallingConfig.Mode.any.stringValue
+                )
+            )
+        )
+        
+        let retryResponse = try await sendRequest(retryRequest)
+        let enhancedCommands = try parseCommandsFromResponse(retryResponse)
+        
+        print("🔄 Enhanced commands generated: \(enhancedCommands.count)")
+        
+        return enhancedCommands
+    }
+    
+    // Build prompt that emphasizes missing priority apps
+    private func buildPriorityEnhancedPrompt(originalPrompt: String, missingApps: [LLMContext.WindowSummary], context: LLMContext) -> String {
+        var enhancedPrompt = originalPrompt
+        
+        enhancedPrompt += "\n\n🚨 PRIORITY APP COVERAGE REQUIREMENT:\n"
+        enhancedPrompt += "The following important apps were NOT positioned in the previous attempt:\n"
+        
+        let mainDisplay = context.screenResolutions.first ?? CGSize(width: 1440, height: 900)
+        for app in missingApps {
+            let bounds = app.bounds
+            let widthPercent = (bounds.width / mainDisplay.width) * 100
+            let heightPercent = (bounds.height / mainDisplay.height) * 100
+            
+            enhancedPrompt += "- \(app.appName): \(String(format: "%.0f", widthPercent))%w × \(String(format: "%.0f", heightPercent))%h - MUST BE POSITIONED\n"
+        }
+        
+        enhancedPrompt += "\nYou MUST include flexible_position calls for ALL apps listed above in addition to other windows.\n"
+        
+        return enhancedPrompt
+    }
+    
+    // MARK: - Window Coverage Analysis
+    private func analyzeWindowCoverage(commands: [WindowCommand], context: LLMContext?, userInput: String) {
+        guard let context = context else { return }
+        
+        print("\n🔍 WINDOW COVERAGE ANALYSIS:")
+        print(String(repeating: "=", count: 50))
+        
+        // Get all unminimized windows
+        let unminimizedWindows = context.visibleWindows.filter { !$0.isMinimized }
+        print("📊 UNMINIMIZED WINDOWS: \(unminimizedWindows.count)")
+        
+        // Simplified app extraction from commands
+        let commandedApps = Set(commands.map { command in
+            command.target
+        })
+        
+        print("🎯 COMMANDED APPS: \(commandedApps.count)")
+        for app in commandedApps.sorted() {
+            print("  ✅ \(app)")
+        }
+        
+        // Find ignored windows
+        let ignoredWindows = unminimizedWindows.filter { window in
+            !commandedApps.contains(window.appName)
+        }
+        
+        print("❌ IGNORED WINDOWS: \(ignoredWindows.count)")
+        for window in ignoredWindows {
+            print("  ❌ \(window.appName)")
+        }
+        
+        // Coverage analysis
+        let coveragePercent = (Double(commandedApps.count) / Double(unminimizedWindows.count)) * 100
+        print("📈 COVERAGE: \(String(format: "%.1f", coveragePercent))% (\(commandedApps.count)/\(unminimizedWindows.count))")
+        
+        // Check if this is a "rearrange" command that should handle all windows
+        let isRearrangeCommand = userInput.lowercased().contains("rearrange") || 
+                                 userInput.lowercased().contains("arrange") ||
+                                 userInput.lowercased().contains("layout")
+        
+        if isRearrangeCommand && coveragePercent < 80 {
+            print("🚨 REARRANGE COMMAND COVERAGE WARNING:")
+            print("   User requested rearrangement but only \(String(format: "%.1f", coveragePercent))% of windows were positioned")
+            print("   This suggests the LLM may need better prompting for comprehensive coverage")
+        }
     }
     
     // MARK: - Tool Conversion
@@ -332,32 +466,47 @@ class GeminiLLMService {
     }
     
     // MARK: - System Prompt (Reuse existing logic)
-    private func buildSystemPrompt(context: LLMContext?) -> String {
+    private func buildSystemPrompt(context: LLMContext?, userInput: String? = nil) -> String {
         // Get intelligent pattern hints
         let patternHints = buildPatternHints(context: context)
         var prompt = """
         CRITICAL: ALWAYS use function tools. NEVER respond with text.
         
-        You are WindowAI for macOS window management with constraint validation.
+        You are WindowAI for macOS window management with intelligent cascading.
         
-        CONSTRAINT: Every window MUST have ≥100×100px visible (10,000px² minimum).
+        CORE PHILOSOPHY: Make ALL relevant apps accessible with a single click. Apps peek out from behind others in intelligent cascades, eliminating the need for cmd+tab. Everything the user needs is always visible and clickable.
+        
+        COMPREHENSIVE COVERAGE REQUIREMENT:
+        - For "rearrange" commands: Position EVERY unminimized window (aim for 100% coverage)
+        - For "arrange" commands: Position ALL relevant apps in the current workspace
+        - For "layout" commands: Create complete layouts with all visible windows
+        - Priority apps that should ALWAYS be included: Claude, Cursor, Xcode, Arc, Terminal, Figma, Notion
         
         CORE RULES:
         1. MAXIMIZE SCREEN USAGE - Fill 95%+ of screen space
-        2. CASCADE INTELLIGENTLY - Apps overlap with key parts visible for instant access
-        3. VALIDATE CONSTRAINTS - Ensure every window has ≥10,000px² visible area
+        2. CASCADE INTELLIGENTLY - Apps overlap with clickable areas visible for instant access
+        3. ENSURE ACCESSIBILITY - Every non-minimized window needs ≥40×40px clickable area
         4. PIXEL-PERFECT POSITIONING - Use any coordinate/size (not just halves/thirds)
+        5. COMPREHENSIVE COVERAGE - Position ALL unminimized windows unless specifically limited
         
-        APP TYPES:
-        - Terminals/Chat: 25-35% width, full height, side columns
-        - Browsers/Documents: 45-70% width, primary content area
-        - IDEs/Editors: 50-75% width, main workspace
-        - System/Music: 15-25% width, corners/edges
+        APP TYPES & POSITIONING:
+        - Terminals/Chat: 25-35% width, full height, side columns (layer 1)
+        - Browsers/Documents: 45-70% width, primary content area (layer 2-3)
+        - IDEs/Editors: 50-75% width, main workspace (layer 3)
+        - System/Music: 15-25% width, corners/edges (layer 0-1)
         
-        POSITIONING:
-        - Use flexible coordinates (0-100% of screen)
-        - Cascade with 20-200px offsets
-        - Prioritize screen coverage over rigid rules
+        CASCADING STRATEGY:
+        - Layer 3 (front): Primary work app (IDE, main browser)
+        - Layer 2 (middle): Secondary apps with 50-100px peek areas
+        - Layer 1 (back): Side columns and reference apps
+        - Layer 0 (background): System utilities and background apps
+        
+        CRITICAL: NO COMPLETE OVERLAP ALLOWED
+        - NEVER position windows with identical x_position coordinates
+        - Terminal apps: x_position=0-35%, IDE apps: x_position=35-100%
+        - Browser apps: x_position=20-80% with small offsets (5-10%) for cascade
+        - Ensure ALL windows have visible portions (minimum 40×40px visible area)
+        - Use different x_position values for side-by-side placement
         
         TOOL USAGE:
         Use `flexible_position` for ALL operations:
@@ -370,9 +519,14 @@ class GeminiLLMService {
         - Prefer external displays for main work
         
         EXAMPLES:
-        "unminimize all windows" → flexible_position(app_name: "AppName", minimize: false) for each minimized window
+        "rearrange my windows" → flexible_position calls for EVERY unminimized window
         "focus Safari" → flexible_position(app_name: "Safari", focus: true)
-        "code" → Position Terminal (side), IDE (main), Browser (cascade)
+        "code setup" → Position Terminal (side), IDE (main), Browser (cascade), ALL other relevant apps
+        
+        POSITIONING EXAMPLES (NO OVERLAP):
+        Terminal: x_position="0", width="25" (occupies 0-25% of screen)
+        Xcode: x_position="25", width="75" (occupies 25-100% of screen) ← NOT x_position="0"
+        Arc: x_position="30", width="60" (occupies 30-90% with peek areas visible)
         """
         
         
@@ -383,22 +537,71 @@ class GeminiLLMService {
             let mainDisplay = context.screenResolutions.first ?? CGSize(width: 1440, height: 900)
             prompt += "Display: \(Int(mainDisplay.width))x\(Int(mainDisplay.height))\n"
             
-            // Current windows (limit to 8 most relevant)
-            let relevantWindows = context.visibleWindows.prefix(8)
-            prompt += "Windows:\n"
-            for window in relevantWindows {
+            // Separate minimized and unminimized windows
+            let unminimizedWindows = context.visibleWindows.filter { !$0.isMinimized }
+            let minimizedWindows = context.visibleWindows.filter { $0.isMinimized }
+            
+            // PROACTIVE CONSTRAINT PREVENTION: Context-aware app minimization
+            let contextIrrelevantApps = (unminimizedWindows.count > 5) ? 
+                identifyContextIrrelevantApps(unminimizedWindows: unminimizedWindows, userInput: userInput ?? "") : []
+            
+            if unminimizedWindows.count > 5 {
+                
+                if !contextIrrelevantApps.isEmpty {
+                    prompt += """
+                    
+                    🎯 CONTEXT-AWARE MINIMIZATION REQUIRED:
+                    You have \(unminimizedWindows.count) unminimized windows, but \(contextIrrelevantApps.count) are not relevant to this context.
+                    
+                    MINIMIZE THESE APPS (not relevant to current task):
+                    """
+                    
+                    for app in contextIrrelevantApps {
+                        prompt += "- flexible_position(app_name: \"\(app)\", minimize: true)\n"
+                    }
+                    
+                    prompt += """
+                    
+                    This will leave ~\(unminimizedWindows.count - contextIrrelevantApps.count) apps positioned with proper visibility (≥40×40px each).
+                    
+                    """
+                } else {
+                    prompt += """
+                    
+                    ⚠️ SPACE CONSTRAINT WARNING:
+                    You have \(unminimizedWindows.count) unminimized windows but optimal layouts work best with 4-5 windows.
+                    Consider minimizing less important apps to ensure proper visibility (≥40×40px clickable area).
+                    
+                    """
+                }
+            }
+            
+            // Adjust coverage requirement based on context-aware minimization
+            if !contextIrrelevantApps.isEmpty {
+                prompt += "\nUNMINIMIZED WINDOWS (position remaining ~\(unminimizedWindows.count - contextIrrelevantApps.count) after minimizing irrelevant apps):\n"
+            } else {
+                prompt += "\nUNMINIMIZED WINDOWS (MUST POSITION ALL):\n"
+            }
+            for window in unminimizedWindows {
                 let bounds = window.bounds
                 let widthPercent = (bounds.width / mainDisplay.width) * 100
                 let heightPercent = (bounds.height / mainDisplay.height) * 100
                 
                 prompt += "- \(window.appName): \(String(format: "%.0f", widthPercent))%w × \(String(format: "%.0f", heightPercent))%h"
-                if window.isMinimized { prompt += " [MIN]" }
                 prompt += "\n"
             }
             
-            if context.visibleWindows.count > 8 {
-                prompt += "... and \(context.visibleWindows.count - 8) more windows\n"
+            if !minimizedWindows.isEmpty {
+                prompt += "\nMINIMIZED WINDOWS (ignore unless specifically requested):\n"
+                for window in minimizedWindows.prefix(3) {
+                    prompt += "- \(window.appName) [MIN]\n"
+                }
+                if minimizedWindows.count > 3 {
+                    prompt += "... and \(minimizedWindows.count - 3) more minimized windows\n"
+                }
             }
+            
+            prompt += "\nCOVERAGE REQUIREMENT: Position ALL \(unminimizedWindows.count) unminimized windows listed above.\n"
         }
         
         return prompt
@@ -479,6 +682,11 @@ class GeminiLLMService {
             throw GeminiLLMError.noCommandsGenerated
         }
         
+        // Check for MAX_TOKENS finish reason and provide graceful handling
+        if firstCandidate.finishReason == "MAX_TOKENS" {
+            print("⚠️  Response truncated due to MAX_TOKENS - partial response may be incomplete")
+        }
+        
         for (index, part) in firstCandidate.content.parts.enumerated() {
             print("  Content part \(index + 1): type=\(part.functionCall != nil ? "function_call" : "text")")
             
@@ -512,6 +720,12 @@ class GeminiLLMService {
         }
         
         if commands.isEmpty {
+            // Check if this is due to MAX_TOKENS truncation
+            if firstCandidate.finishReason == "MAX_TOKENS" {
+                print("  ⚠️  No commands due to MAX_TOKENS truncation - this can happen during retries")
+                throw GeminiLLMError.noToolsUsed("Response truncated due to MAX_TOKENS - no tools used")
+            }
+            
             // If no function calls were made, extract any text response
             let textResponses = firstCandidate.content.parts.compactMap { $0.text }.joined(separator: " ")
             if !textResponses.isEmpty {
@@ -568,21 +782,30 @@ class GeminiLLMService {
         
         You are WindowAI for macOS window management.
         
-        CONSTRAINT: Every window MUST have ≥100×100px visible.
+        CORE PHILOSOPHY: Make apps accessible with intelligent cascading. Apps peek out with clickable areas visible.
         
         CORE RULES:
         1. MAXIMIZE SCREEN USAGE - Fill 95%+ of screen
-        2. CASCADE INTELLIGENTLY - Apps overlap with parts visible
-        3. VALIDATE CONSTRAINTS - Ensure ≥10,000px² visible per window
+        2. CASCADE INTELLIGENTLY - Apps overlap with clickable areas visible
+        3. ENSURE ACCESSIBILITY - Non-minimized windows need ≥40×40px clickable area
+        4. NO COMPLETE OVERLAP - Different x_position values for all windows
+        
+        CRITICAL POSITIONING:
+        - NEVER use identical x_position coordinates for multiple windows
+        - Terminal apps: x_position=0-35%, IDE apps: x_position=35-100%
+        - Browser apps: x_position=20-80% with 5-10% offsets for cascade
+        - Example: Terminal x="0" width="25", Xcode x="25" width="75" (NOT both x="0")
         
         TOOL USAGE:
         Use `flexible_position` for ALL operations:
         - minimize: false → unminimize window
         - focus: true → focus window
         - positioning: x_position, y_position, width, height (percentages)
+        - layer: 0=back, 1=side, 2=middle, 3=front
         
         EXAMPLES:
         "unminimize all windows" → flexible_position(app_name: "AppName", minimize: false) for each minimized window
+        "rearrange windows" → position ALL unminimized windows with different x_position values
         """
         
         // Add only essential context
@@ -627,7 +850,7 @@ class GeminiLLMService {
     
     // MARK: - Constraint Enforcement and Retry Logic
     private func enforceConstraints(_ commands: [WindowCommand], context: LLMContext, userInput: String, originalPrompt: String) async throws -> [WindowCommand] {
-        let maxRetries = 2
+        let maxRetries = 1  // SIMPLIFIED: Only one retry attempt, then allow failure for learning data
         var currentCommands = commands
         
         for attempt in 0..<maxRetries {
@@ -635,7 +858,7 @@ class GeminiLLMService {
             
             if validationResult.isValid {
                 if attempt == 0 {
-                    print("✅ CONSTRAINT VALIDATION PASSED: All commands satisfy 100×100px requirement")
+                    print("✅ CONSTRAINT VALIDATION PASSED: All commands satisfy 40×40px clickable area requirement")
                 } else {
                     print("✅ CONSTRAINT VALIDATION PASSED: Commands fixed after \(attempt) retries")
                 }
@@ -663,7 +886,7 @@ class GeminiLLMService {
                 systemInstruction: GeminiSystemInstruction(parts: [GeminiPart(text: retryPrompt)]),
                 generationConfig: GeminiGenerationConfig(
                     temperature: 0.1,  // Slightly higher temperature for alternative solutions
-                    maxOutputTokens: 4000
+                    maxOutputTokens: 8000  // FIXED: Increased from 4000 to match reduced context retry
                 ),
                 toolConfig: GeminiToolConfig(
                     functionCallingConfig: GeminiFunctionCallingConfig(
@@ -672,8 +895,18 @@ class GeminiLLMService {
                 )
             )
             
-            let retryResponse = try await sendRequest(retryRequest)
-            currentCommands = try parseCommandsFromResponse(retryResponse)
+            do {
+                let retryResponse = try await sendRequest(retryRequest)
+                currentCommands = try parseCommandsFromResponse(retryResponse)
+            } catch {
+                print("⚠️  RETRY FAILED: \(error.localizedDescription)")
+                if error.localizedDescription.contains("MAX_TOKENS") || error.localizedDescription.contains("no tools used") {
+                    print("🔄 MAX_TOKENS or parsing error detected - using original commands as fallback")
+                    return currentCommands  // Return original commands instead of crashing
+                } else {
+                    throw error  // Re-throw other errors
+                }
+            }
         }
         
         // Should not reach here due to the return in the loop
@@ -692,7 +925,7 @@ class GeminiLLMService {
         retryPrompt += """
         
         RETRY INSTRUCTIONS:
-        1. The previous layout violated the 100×100px visibility constraint
+        1. The previous layout violated the 40×40px visibility constraint
         2. You MUST find alternative positioning that satisfies ALL constraints
         3. Consider these strategies:
            - Reduce window sizes to prevent excessive overlap
@@ -706,6 +939,65 @@ class GeminiLLMService {
         """
         
         return retryPrompt
+    }
+    
+    // MARK: - Context-Aware App Identification
+    private func identifyContextIrrelevantApps(unminimizedWindows: [LLMContext.WindowSummary], userInput: String) -> [String] {
+        let userInputLower = userInput.lowercased()
+        var irrelevantApps: [String] = []
+        
+        // Define context patterns and their irrelevant apps
+        let contextPatterns: [String: [String]] = [
+            // Coding context patterns
+            "cod": ["Steam", "Music", "Spotify", "Calendar", "Messages", "Mail", "Photos", "TV", "Podcasts"],
+            "develop": ["Steam", "Music", "Spotify", "Calendar", "Messages", "Mail", "Photos", "TV", "Podcasts"],
+            "program": ["Steam", "Music", "Spotify", "Calendar", "Messages", "Mail", "Photos", "TV", "Podcasts"],
+            
+            // Design context patterns  
+            "design": ["Steam", "Terminal", "Messages", "Mail", "Calendar", "Calculator"],
+            "figma": ["Steam", "Terminal", "Messages", "Mail", "Calendar", "Calculator"],
+            
+            // Research context patterns
+            "research": ["Steam", "Music", "Spotify", "Games", "Entertainment"],
+            "read": ["Steam", "Music", "Spotify", "Games", "Entertainment"],
+            
+            // General productivity patterns
+            "work": ["Steam", "Games", "Music", "TV", "Podcasts", "Entertainment"],
+            "focus": ["Steam", "Games", "Music", "TV", "Podcasts", "Entertainment", "Messages", "Mail"]
+        ]
+        
+        // Always irrelevant apps regardless of context
+        let alwaysIrrelevantApps = ["Steam", "Activity Monitor", "Console", "Disk Utility"]
+        
+        // Find matching context pattern
+        var contextIrrelevantApps: [String] = []
+        for (pattern, apps) in contextPatterns {
+            if userInputLower.contains(pattern) {
+                contextIrrelevantApps = apps
+                break
+            }
+        }
+        
+        // If no specific context found, use always irrelevant apps
+        if contextIrrelevantApps.isEmpty {
+            contextIrrelevantApps = alwaysIrrelevantApps
+        }
+        
+        // Find apps that are both unminimized and context-irrelevant
+        let unminimizedAppNames = Set(unminimizedWindows.map { $0.appName })
+        for app in contextIrrelevantApps {
+            if unminimizedAppNames.contains(app) {
+                irrelevantApps.append(app)
+            }
+        }
+        
+        // Limit minimization to avoid over-minimizing (keep at least 4-5 apps visible)
+        let maxToMinimize = max(0, unminimizedWindows.count - 5)
+        if irrelevantApps.count > maxToMinimize {
+            irrelevantApps = Array(irrelevantApps.prefix(maxToMinimize))
+        }
+        
+        return irrelevantApps
     }
     
     // MARK: - Command Constraint Validation
@@ -745,10 +1037,25 @@ class GeminiLLMService {
         if let windowIndex = updatedStates.firstIndex(where: { $0.app == command.target }) {
             let currentWindow = updatedStates[windowIndex]
             
+            // Check if this is a flexible_position command with minimize parameter
+            let isMinimizeCommand = command.parameters?["minimize"] == "true"
+            let isUnminimizeCommand = command.parameters?["minimize"] == "false"
+            
             // Apply the command based on its type
             switch command.action {
             case .move:
-                if let customPosition = command.customPosition, let customSize = command.customSize {
+                // For flexible_position commands, check minimize parameter first
+                if isMinimizeCommand {
+                    let updatedWindow = WindowState(
+                        app: currentWindow.app,
+                        id: currentWindow.id,
+                        frame: currentWindow.frame,
+                        layer: currentWindow.layer,
+                        displayIndex: currentWindow.displayIndex,
+                        isMinimized: true
+                    )
+                    updatedStates[windowIndex] = updatedWindow
+                } else if let customPosition = command.customPosition, let customSize = command.customSize {
                     // Calculate new frame based on display resolution
                     let displayResolution = context.screenResolutions.first ?? CGSize(width: 1440, height: 900)
                     let newFrame = CGRect(
@@ -758,7 +1065,7 @@ class GeminiLLMService {
                         height: (customSize.height / 100) * displayResolution.height
                     )
                     
-                    // Update the window state
+                    // Update the window state (unminimize if this is positioning)
                     let updatedWindow = WindowState(
                         app: currentWindow.app,
                         id: currentWindow.id,
@@ -768,6 +1075,17 @@ class GeminiLLMService {
                         isMinimized: false
                     )
                     
+                    updatedStates[windowIndex] = updatedWindow
+                } else if isUnminimizeCommand {
+                    // This is just an unminimize command without positioning
+                    let updatedWindow = WindowState(
+                        app: currentWindow.app,
+                        id: currentWindow.id,
+                        frame: currentWindow.frame,
+                        layer: currentWindow.layer,
+                        displayIndex: currentWindow.displayIndex,
+                        isMinimized: false
+                    )
                     updatedStates[windowIndex] = updatedWindow
                 }
             case .minimize:

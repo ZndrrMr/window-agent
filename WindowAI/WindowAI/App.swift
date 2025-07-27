@@ -233,11 +233,12 @@ class WindowAIController: HotkeyManagerDelegate, LLMServiceDelegate {
         
         // Build window summaries with display info
         let visibleWindows = allWindows.map { window in
-            let isVisible = windowManager.isWindowVisible(window)
-            let isMinimized = !isVisible
+            // FIXED: Use proper window state detection instead of boolean logic error
+            let isMinimized = windowManager.isWindowMinimized(window)
+            let isVisible = !isMinimized
             
-            // Debug: Log window state to verify boolean logic fix
-            print("🔍 Window State: \(window.appName) - Visible: \(isVisible), Minimized: \(isMinimized)")
+            // Debug: Log window state to verify fix
+            print("🔍 Window State: \(window.appName) - Minimized: \(isMinimized), Visible: \(isVisible)")
             
             return LLMContext.WindowSummary(
                 title: window.title,
@@ -336,19 +337,20 @@ class WindowAIController: HotkeyManagerDelegate, LLMServiceDelegate {
         return await withTaskGroup(of: LLMContext.WindowSummary.self, returning: [LLMContext.WindowSummary].self) { group in
             for window in windows {
                 group.addTask {
-                    async let isVisible = windowManager.isWindowVisibleAsync(window)
+                    // FIXED: Use proper window state detection instead of boolean logic error
+                    async let isMinimizedAsync = windowManager.isWindowMinimizedAsync(window)
                     async let displayIndex = windowManager.getDisplayForWindow(window)
                     
-                    let (visible, display) = await (isVisible, displayIndex)
+                    let (minimized, display) = await (isMinimizedAsync, displayIndex)
                     
-                    // Debug: Log window state to verify boolean logic fix
-                    print("🔍 Window State: \(window.appName) - Visible: \(visible), Minimized: \(!visible)")
+                    // Debug: Log window state to verify fix
+                    print("🔍 Window State: \(window.appName) - Minimized: \(minimized), Visible: \(!minimized)")
                     
                     return LLMContext.WindowSummary(
                         title: window.title,
                         appName: window.appName,
                         bounds: window.bounds,
-                        isMinimized: !visible,
+                        isMinimized: minimized,
                         displayIndex: display
                     )
                 }
