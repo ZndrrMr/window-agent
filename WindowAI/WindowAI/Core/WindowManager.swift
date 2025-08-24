@@ -376,13 +376,24 @@ class WindowManager {
     }
     
     func getWindowsForApp(named appName: String) -> [WindowInfo] {
-        guard let app = NSWorkspace.shared.runningApplications.first(where: { 
-            $0.localizedName?.lowercased() == appName.lowercased() 
-        }) else {
-            return []
+        // Use the same detection logic as getAllWindows() to avoid API inconsistencies
+        // This fixes the issue where AX accessibility names != NSWorkspace.localizedName
+        let allWindows = getAllWindows()
+        
+        // First try exact match (case-insensitive)
+        let exactMatches = allWindows.filter { 
+            $0.appName.lowercased() == appName.lowercased() 
+        }
+        if !exactMatches.isEmpty {
+            return exactMatches
         }
         
-        return getWindowsForApp(pid: app.processIdentifier)
+        // Then try partial match for flexibility
+        let partialMatches = allWindows.filter { 
+            $0.appName.lowercased().contains(appName.lowercased()) ||
+            appName.lowercased().contains($0.appName.lowercased())
+        }
+        return partialMatches
     }
     
     // MARK: - Timeout Wrapper for Per-App Window Discovery
@@ -742,7 +753,18 @@ class WindowManager {
         let actualSizeChange = abs(newBounds.width - currentBounds.width) > positionTolerance ||
                              abs(newBounds.height - currentBounds.height) > positionTolerance
         
-        let overallSuccess = positionResult == .success && sizeResult == .success
+        // Check if we achieved the target size (within tolerance)
+        // Use larger tolerance for size constraints (apps have minimum sizes)
+        let sizeTolerance: CGFloat = 50.0  // More forgiving for app constraints
+        let menuBarTolerance: CGFloat = 30.0  // Account for menu bar positioning
+        
+        let targetSizeAchieved = abs(newBounds.width - finalBounds.width) <= sizeTolerance &&
+                               abs(newBounds.height - finalBounds.height) <= sizeTolerance
+        let targetPositionAchieved = abs(newBounds.origin.x - finalBounds.origin.x) <= positionTolerance &&
+                                   abs(newBounds.origin.y - finalBounds.origin.y) <= menuBarTolerance
+        
+        // Success means API succeeded AND we achieved the target bounds
+        let overallSuccess = positionResult == .success && sizeResult == .success && targetSizeAchieved && targetPositionAchieved
         
         if overallSuccess {
             if actualPositionChange || actualSizeChange {
@@ -751,7 +773,15 @@ class WindowManager {
                 print("   ⚠️ API reported success but window didn't actually move (may already be at target)")
             }
         } else {
-            print("   ❌ Window movement FAILED - API returned error")
+            let apiSuccess = positionResult == .success && sizeResult == .success
+            if apiSuccess {
+                print("   ❌ Window movement FAILED - API succeeded but didn't reach target bounds")
+                print("      Target: \(Int(finalBounds.origin.x)),\(Int(finalBounds.origin.y)) \(Int(finalBounds.width))x\(Int(finalBounds.height))")
+                print("      Actual: \(Int(newBounds.origin.x)),\(Int(newBounds.origin.y)) \(Int(newBounds.width))x\(Int(newBounds.height))")
+                print("      Position achieved: \(targetPositionAchieved), Size achieved: \(targetSizeAchieved)")
+            } else {
+                print("   ❌ Window movement FAILED - API returned error")
+            }
         }
         
         print("   Overall success: \(overallSuccess)")
