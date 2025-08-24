@@ -218,24 +218,8 @@ class GeminiLLMService {
     func processCommand(_ userInput: String, context: LLMContext? = nil) async throws -> [WindowCommand] {
         print("\n🤖 USER COMMAND: \"\(userInput)\"")
         
-        // Debug: Log available windows
         let windowCount = context?.visibleWindows.count ?? 0
-        print("📊 AVAILABLE WINDOWS: \(windowCount) visible windows for arrangement")
-        if let windows = context?.visibleWindows {
-            let mainDisplay = context?.screenResolutions.first ?? CGSize(width: 1440, height: 900)
-            for window in windows.prefix(10) { // Show first 10 to avoid spam
-                let bounds = window.bounds
-                let widthPercent = (bounds.width / mainDisplay.width) * 100
-                let heightPercent = (bounds.height / mainDisplay.height) * 100
-                let xPercent = (bounds.origin.x / mainDisplay.width) * 100
-                let yPercent = (bounds.origin.y / mainDisplay.height) * 100
-                
-                print("  📱 \(window.appName): x=\(String(format: "%.0f", xPercent))% y=\(String(format: "%.0f", yPercent))% w=\(String(format: "%.0f", widthPercent))% h=\(String(format: "%.0f", heightPercent))% (\(Int(window.bounds.width))x\(Int(window.bounds.height)))")
-            }
-            if windows.count > 10 {
-                print("  ... and \(windows.count - 10) more windows")
-            }
-        }
+        print("📊 Processing \(windowCount) windows")
         
         let systemPrompt = buildSystemPrompt(context: context, userInput: userInput)
         print("📝 SYSTEM PROMPT LENGTH: \(systemPrompt.count) characters")
@@ -261,15 +245,7 @@ class GeminiLLMService {
             )
         )
         
-        print("🔧 FUNCTION CALLING ENFORCEMENT: toolConfig.mode = ANY (forces function calls only)")
-        print("🛠️  TOOL COUNT: \(WindowManagementTools.allTools.count) tools being sent")
-        
-        // Debug: Show tool names and parameter counts
-        for tool in WindowManagementTools.allTools {
-            let paramCount = tool.input_schema.properties.count
-            let requiredCount = tool.input_schema.required.count
-            print("   - \(tool.name): \(paramCount) parameters (\(requiredCount) required)")
-        }
+        print("🔧 Function calling enforced with \(WindowManagementTools.allTools.count) tools")
         
         let response = try await sendRequest(request)
         
@@ -282,163 +258,23 @@ class GeminiLLMService {
         
         let commands = try parseCommandsFromResponse(response)
         
-        // Enhanced debug analysis of LLM decisions
-        analyzeWindowCoverage(commands: commands, context: context, userInput: userInput)
-        
-        // Add missing priority windows if needed
-        let enhancedCommands = try await ensurePriorityWindowCoverage(commands: commands, context: context, userInput: userInput, originalPrompt: systemPrompt)
+        let enhancedCommands = commands
         
         // Re-enable constraint validation with fixes applied
         if let context = context {
             let validatedCommands = try await enforceConstraints(enhancedCommands, context: context, userInput: userInput, originalPrompt: systemPrompt)
             
-            // Debug: Compare tool calls generated vs windows available
-            print("📈 ANALYSIS: Generated \(validatedCommands.count) tool calls for \(windowCount) available windows")
-            if validatedCommands.count < windowCount && windowCount > 3 {
-                print("⚠️  NOTE: Only \(validatedCommands.count) windows positioned out of \(windowCount) available")
-                print("   Consider if all windows should be arranged for comprehensive layout")
-            }
+            print("✅ Generated \(validatedCommands.count) commands")
             
             return validatedCommands
         }
         
-        // Debug: Compare tool calls generated vs windows available
-        print("📈 ANALYSIS: Generated \(enhancedCommands.count) tool calls for \(windowCount) available windows")
-        if enhancedCommands.count < windowCount && windowCount > 3 {
-            print("⚠️  NOTE: Only \(enhancedCommands.count) windows positioned out of \(windowCount) available")
-            print("   Consider if all windows should be arranged for comprehensive layout")
-        }
+        print("✅ Generated \(enhancedCommands.count) commands")
         
         return enhancedCommands
     }
     
-    // MARK: - Priority Window Coverage
-    private func ensurePriorityWindowCoverage(commands: [WindowCommand], context: LLMContext?, userInput: String, originalPrompt: String) async throws -> [WindowCommand] {
-        guard let context = context else { return commands }
-        
-        // Check if this is a rearrange command that should handle all windows
-        let isRearrangeCommand = userInput.lowercased().contains("rearrange") || 
-                                 userInput.lowercased().contains("arrange") ||
-                                 userInput.lowercased().contains("layout")
-        
-        if !isRearrangeCommand {
-            return commands // Only enhance for rearrange commands
-        }
-        
-        // Get all unminimized windows
-        let unminimizedWindows = context.visibleWindows.filter { !$0.isMinimized }
-        
-        // Get apps that received commands
-        let commandedApps = Set(commands.map { command in
-            command.target
-        })
-        
-        // Find missing priority apps
-        let priorityApps = ["Claude", "Cursor", "Xcode", "Arc", "Terminal", "Figma", "Notion"]
-        let missingPriorityApps = unminimizedWindows.filter { window in
-            priorityApps.contains(window.appName) && !commandedApps.contains(window.appName)
-        }
-        
-        if missingPriorityApps.isEmpty {
-            return commands // All priority apps are covered
-        }
-        
-        print("\n🔄 PRIORITY WINDOW ENHANCEMENT:")
-        print("Missing priority apps: \(missingPriorityApps.map { $0.appName }.joined(separator: ", "))")
-        
-        // Build enhanced prompt that emphasizes missing priority apps
-        let enhancedPrompt = buildPriorityEnhancedPrompt(originalPrompt: originalPrompt, missingApps: missingPriorityApps, context: context)
-        
-        let retryRequest = GeminiRequest(
-            contents: [GeminiContent(parts: [GeminiPart(text: userInput)])],
-            tools: convertToGeminiTools(WindowManagementTools.allTools),
-            systemInstruction: GeminiSystemInstruction(parts: [GeminiPart(text: enhancedPrompt)]),
-            generationConfig: GeminiGenerationConfig(
-                temperature: 0.1,
-                maxOutputTokens: 6000
-            ),
-            toolConfig: GeminiToolConfig(
-                functionCallingConfig: GeminiFunctionCallingConfig(
-                    mode: GeminiFunctionCallingConfig.Mode.any.stringValue
-                )
-            )
-        )
-        
-        let retryResponse = try await sendRequest(retryRequest)
-        let enhancedCommands = try parseCommandsFromResponse(retryResponse)
-        
-        print("🔄 Enhanced commands generated: \(enhancedCommands.count)")
-        
-        return enhancedCommands
-    }
     
-    // Build prompt that emphasizes missing priority apps
-    private func buildPriorityEnhancedPrompt(originalPrompt: String, missingApps: [LLMContext.WindowSummary], context: LLMContext) -> String {
-        var enhancedPrompt = originalPrompt
-        
-        enhancedPrompt += "\n\n🚨 PRIORITY APP COVERAGE REQUIREMENT:\n"
-        enhancedPrompt += "The following important apps were NOT positioned in the previous attempt:\n"
-        
-        let mainDisplay = context.screenResolutions.first ?? CGSize(width: 1440, height: 900)
-        for app in missingApps {
-            let bounds = app.bounds
-            let widthPercent = (bounds.width / mainDisplay.width) * 100
-            let heightPercent = (bounds.height / mainDisplay.height) * 100
-            
-            enhancedPrompt += "- \(app.appName): \(String(format: "%.0f", widthPercent))%w × \(String(format: "%.0f", heightPercent))%h - MUST BE POSITIONED\n"
-        }
-        
-        enhancedPrompt += "\nYou MUST include flexible_position calls for ALL apps listed above in addition to other windows.\n"
-        
-        return enhancedPrompt
-    }
-    
-    // MARK: - Window Coverage Analysis
-    private func analyzeWindowCoverage(commands: [WindowCommand], context: LLMContext?, userInput: String) {
-        guard let context = context else { return }
-        
-        print("\n🔍 WINDOW COVERAGE ANALYSIS:")
-        print(String(repeating: "=", count: 50))
-        
-        // Get all unminimized windows
-        let unminimizedWindows = context.visibleWindows.filter { !$0.isMinimized }
-        print("📊 UNMINIMIZED WINDOWS: \(unminimizedWindows.count)")
-        
-        // Simplified app extraction from commands
-        let commandedApps = Set(commands.map { command in
-            command.target
-        })
-        
-        print("🎯 COMMANDED APPS: \(commandedApps.count)")
-        for app in commandedApps.sorted() {
-            print("  ✅ \(app)")
-        }
-        
-        // Find ignored windows
-        let ignoredWindows = unminimizedWindows.filter { window in
-            !commandedApps.contains(window.appName)
-        }
-        
-        print("❌ IGNORED WINDOWS: \(ignoredWindows.count)")
-        for window in ignoredWindows {
-            print("  ❌ \(window.appName)")
-        }
-        
-        // Coverage analysis
-        let coveragePercent = (Double(commandedApps.count) / Double(unminimizedWindows.count)) * 100
-        print("📈 COVERAGE: \(String(format: "%.1f", coveragePercent))% (\(commandedApps.count)/\(unminimizedWindows.count))")
-        
-        // Check if this is a "rearrange" command that should handle all windows
-        let isRearrangeCommand = userInput.lowercased().contains("rearrange") || 
-                                 userInput.lowercased().contains("arrange") ||
-                                 userInput.lowercased().contains("layout")
-        
-        if isRearrangeCommand && coveragePercent < 80 {
-            print("🚨 REARRANGE COMMAND COVERAGE WARNING:")
-            print("   User requested rearrangement but only \(String(format: "%.1f", coveragePercent))% of windows were positioned")
-            print("   This suggests the LLM may need better prompting for comprehensive coverage")
-        }
-    }
     
     // MARK: - Tool Conversion
     private func convertToGeminiTools(_ tools: [LLMTool]) -> [GeminiTool] {
@@ -468,65 +304,30 @@ class GeminiLLMService {
     // MARK: - System Prompt (Reuse existing logic)
     private func buildSystemPrompt(context: LLMContext?, userInput: String? = nil) -> String {
         // Get intelligent pattern hints
-        let patternHints = buildPatternHints(context: context)
+        let _ = buildPatternHints(context: context)
         var prompt = """
         CRITICAL: ALWAYS use function tools. NEVER respond with text.
         
-        You are WindowAI for macOS window management with intelligent cascading.
+        You are WindowAI for macOS window management.
         
-        CORE PHILOSOPHY: Make ALL relevant apps accessible with a single click. Apps peek out from behind others in intelligent cascades, eliminating the need for cmd+tab. Everything the user needs is always visible and clickable.
+        ALWAYS use this 4-window layout template:
         
-        COMPREHENSIVE COVERAGE REQUIREMENT:
-        - For "rearrange" commands: Position EVERY unminimized window (aim for 100% coverage)
-        - For "arrange" commands: Position ALL relevant apps in the current workspace
-        - For "layout" commands: Create complete layouts with all visible windows
-        - Priority apps that should ALWAYS be included: Claude, Cursor, Xcode, Arc, Terminal, Figma, Notion
+        Main Window (left 60%, full height):
+        flexible_position(app_name: "MainApp", x_position: "0", y_position: "0", width: "60", height: "100", layer: 3, focus: true)
         
-        CORE RULES:
-        1. MAXIMIZE SCREEN USAGE - Fill 95%+ of screen space
-        2. CASCADE INTELLIGENTLY - Apps overlap with clickable areas visible for instant access
-        3. ENSURE ACCESSIBILITY - Every non-minimized window needs ≥40×40px clickable area
-        4. PIXEL-PERFECT POSITIONING - Use any coordinate/size (not just halves/thirds)
-        5. COMPREHENSIVE COVERAGE - Position ALL unminimized windows unless specifically limited
+        Right Window 1 (top right, 33% height):
+        flexible_position(app_name: "App2", x_position: "60", y_position: "0", width: "40", height: "33", layer: 1, focus: false)
         
-        APP TYPES & POSITIONING:
-        - Terminals/Chat: 25-35% width, full height, side columns (layer 1)
-        - Browsers/Documents: 45-70% width, primary content area (layer 2-3)
-        - IDEs/Editors: 50-75% width, main workspace (layer 3)
-        - System/Music: 15-25% width, corners/edges (layer 0-1)
+        Right Window 2 (middle right, 34% height):
+        flexible_position(app_name: "App3", x_position: "60", y_position: "33", width: "40", height: "34", layer: 1, focus: false)
         
-        CASCADING STRATEGY:
-        - Layer 3 (front): Primary work app (IDE, main browser)
-        - Layer 2 (middle): Secondary apps with 50-100px peek areas
-        - Layer 1 (back): Side columns and reference apps
-        - Layer 0 (background): System utilities and background apps
+        Right Window 3 (bottom right, 33% height):
+        flexible_position(app_name: "App4", x_position: "60", y_position: "67", width: "40", height: "33", layer: 1, focus: false)
         
-        CRITICAL: NO COMPLETE OVERLAP ALLOWED
-        - NEVER position windows with identical x_position coordinates
-        - Terminal apps: x_position=0-35%, IDE apps: x_position=35-100%
-        - Browser apps: x_position=20-80% with small offsets (5-10%) for cascade
-        - Ensure ALL windows have visible portions (minimum 40×40px visible area)
-        - Use different x_position values for side-by-side placement
+        Minimize any extra apps:
+        flexible_position(app_name: "ExtraApp", minimize: true)
         
-        TOOL USAGE:
-        Use `flexible_position` for ALL operations:
-        - Window positioning: x_position, y_position, width, height (percentages)
-        - Window lifecycle: minimize, restore, focus, open parameters
-        - Layer control: layer parameter for stacking (0=back, 3=front)
-        
-        MULTI-DISPLAY:
-        - Display 0 = laptop, Display 1+ = external monitors
-        - Prefer external displays for main work
-        
-        EXAMPLES:
-        "rearrange my windows" → flexible_position calls for EVERY unminimized window
-        "focus Safari" → flexible_position(app_name: "Safari", focus: true)
-        "code setup" → Position Terminal (side), IDE (main), Browser (cascade), ALL other relevant apps
-        
-        POSITIONING EXAMPLES (NO OVERLAP):
-        Terminal: x_position="0", width="25" (occupies 0-25% of screen)
-        Xcode: x_position="25", width="75" (occupies 25-100% of screen) ← NOT x_position="0"
-        Arc: x_position="30", width="60" (occupies 30-90% with peek areas visible)
+        Your job: Choose which apps go in each slot based on the user's request. Put the most important app for the task in the Main Window slot.
         """
         
         
@@ -541,67 +342,19 @@ class GeminiLLMService {
             let unminimizedWindows = context.visibleWindows.filter { !$0.isMinimized }
             let minimizedWindows = context.visibleWindows.filter { $0.isMinimized }
             
-            // PROACTIVE CONSTRAINT PREVENTION: Context-aware app minimization
-            let contextIrrelevantApps = (unminimizedWindows.count > 5) ? 
-                identifyContextIrrelevantApps(unminimizedWindows: unminimizedWindows, userInput: userInput ?? "") : []
-            
-            if unminimizedWindows.count > 5 {
-                
-                if !contextIrrelevantApps.isEmpty {
-                    prompt += """
-                    
-                    🎯 CONTEXT-AWARE MINIMIZATION REQUIRED:
-                    You have \(unminimizedWindows.count) unminimized windows, but \(contextIrrelevantApps.count) are not relevant to this context.
-                    
-                    MINIMIZE THESE APPS (not relevant to current task):
-                    """
-                    
-                    for app in contextIrrelevantApps {
-                        prompt += "- flexible_position(app_name: \"\(app)\", minimize: true)\n"
-                    }
-                    
-                    prompt += """
-                    
-                    This will leave ~\(unminimizedWindows.count - contextIrrelevantApps.count) apps positioned with proper visibility (≥40×40px each).
-                    
-                    """
-                } else {
-                    prompt += """
-                    
-                    ⚠️ SPACE CONSTRAINT WARNING:
-                    You have \(unminimizedWindows.count) unminimized windows but optimal layouts work best with 4-5 windows.
-                    Consider minimizing less important apps to ensure proper visibility (≥40×40px clickable area).
-                    
-                    """
-                }
-            }
-            
-            // Adjust coverage requirement based on context-aware minimization
-            if !contextIrrelevantApps.isEmpty {
-                prompt += "\nUNMINIMIZED WINDOWS (position remaining ~\(unminimizedWindows.count - contextIrrelevantApps.count) after minimizing irrelevant apps):\n"
-            } else {
-                prompt += "\nUNMINIMIZED WINDOWS (MUST POSITION ALL):\n"
-            }
             for window in unminimizedWindows {
-                let bounds = window.bounds
-                let widthPercent = (bounds.width / mainDisplay.width) * 100
-                let heightPercent = (bounds.height / mainDisplay.height) * 100
-                
-                prompt += "- \(window.appName): \(String(format: "%.0f", widthPercent))%w × \(String(format: "%.0f", heightPercent))%h"
-                prompt += "\n"
+                prompt += "- \(window.appName)\n"
             }
             
             if !minimizedWindows.isEmpty {
-                prompt += "\nMINIMIZED WINDOWS (ignore unless specifically requested):\n"
+                prompt += "\nMinimized:\n"
                 for window in minimizedWindows.prefix(3) {
-                    prompt += "- \(window.appName) [MIN]\n"
+                    prompt += "- \(window.appName)\n"
                 }
                 if minimizedWindows.count > 3 {
-                    prompt += "... and \(minimizedWindows.count - 3) more minimized windows\n"
+                    prompt += "... and \(minimizedWindows.count - 3) more\n"
                 }
             }
-            
-            prompt += "\nCOVERAGE REQUIREMENT: Position ALL \(unminimizedWindows.count) unminimized windows listed above.\n"
         }
         
         return prompt
@@ -625,28 +378,11 @@ class GeminiLLMService {
             let requestData = try encoder.encode(request)
             urlRequest.httpBody = requestData
             
-            // DEBUG: Print the exact request being sent
-            print("\n🔍 GEMINI REQUEST DEBUG:")
-            print("URL: \(urlString)")
-            print("Headers: \(urlRequest.allHTTPHeaderFields ?? [:])")
-            print("Request Body Size: \(requestData.count) bytes")
-            
-            if let requestJson = String(data: requestData, encoding: .utf8) {
-                print("REQUEST JSON (first 2000 chars):")
-                let truncated = requestJson.count > 2000 ? String(requestJson.prefix(2000)) + "..." : requestJson
-                print(truncated)
-            }
+            print("\n🌐 Sending request to Gemini (\(requestData.count) bytes)")
             
             let (data, response) = try await urlSession.data(for: urlRequest)
             
-            // DEBUG: Print the response
-            print("\n📥 GEMINI RESPONSE DEBUG:")
-            if let responseJson = String(data: data, encoding: .utf8) {
-                print("Response Size: \(data.count) bytes")
-                print("Response JSON (first 1000 chars):")
-                let truncated = responseJson.count > 1000 ? String(responseJson.prefix(1000)) + "..." : responseJson
-                print(truncated)
-            }
+            print("📥 Received response (\(data.count) bytes)")
             
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw GeminiLLMError.invalidResponse
@@ -675,8 +411,7 @@ class GeminiLLMService {
     private func parseCommandsFromResponse(_ response: GeminiResponse) throws -> [WindowCommand] {
         var commands: [WindowCommand] = []
         
-        print("\n📋 GEMINI'S FUNCTION CALLS:")
-        print("  Total candidates: \(response.candidates.count)")
+        print("\n📋 Parsing \(response.candidates.count) candidates")
         
         guard let firstCandidate = response.candidates.first else {
             throw GeminiLLMError.noCommandsGenerated
@@ -687,20 +422,8 @@ class GeminiLLMService {
             print("⚠️  Response truncated due to MAX_TOKENS - partial response may be incomplete")
         }
         
-        for (index, part) in firstCandidate.content.parts.enumerated() {
-            print("  Content part \(index + 1): type=\(part.functionCall != nil ? "function_call" : "text")")
-            
+        for part in firstCandidate.content.parts {
             if let functionCall = part.functionCall {
-                // Print the function call
-                var inputStr = "("
-                for (key, value) in functionCall.args {
-                    if inputStr.count > 1 { inputStr += ", " }
-                    inputStr += "\(key): \"\(value.value)\""
-                }
-                inputStr += ")"
-                print("  → \(functionCall.name)\(inputStr)")
-                
-                // Convert to LLMToolUse format
                 let toolUseInput = functionCall.args.mapValues { AnyCodable($0.value) }
                 let toolUse = LLMToolUse(
                     id: UUID().uuidString,
@@ -710,12 +433,10 @@ class GeminiLLMService {
                 
                 if let command = ToolToCommandConverter.convertToolUse(toolUse) {
                     commands.append(command)
-                    print("    ✓ Command added to list (total: \(commands.count))")
-                } else {
-                    print("    ✗ Failed to convert function call to command")
+                    print("✓ \(functionCall.name): \(command.target)")
                 }
             } else if let text = part.text {
-                print("    Text: \(text)")
+                print("⚠️ Unexpected text response: \(text)")
             }
         }
         
@@ -726,15 +447,10 @@ class GeminiLLMService {
                 throw GeminiLLMError.noToolsUsed("Response truncated due to MAX_TOKENS - no tools used")
             }
             
-            // If no function calls were made, extract any text response
             let textResponses = firstCandidate.content.parts.compactMap { $0.text }.joined(separator: " ")
             if !textResponses.isEmpty {
-                print("  ❌ FUNCTION CALLING FAILED: Gemini responded with text instead of using tools")
-                print("  📝 Text response: \(textResponses)")
-                print("  🔧 HINT: The model should have called snap_window, flexible_position, or other tools")
-                throw GeminiLLMError.noToolsUsed("Gemini generated text explanation instead of function calls: \(textResponses)")
+                throw GeminiLLMError.noToolsUsed("Gemini generated text instead of function calls: \(textResponses)")
             } else {
-                print("  ❌ No commands generated")
                 throw GeminiLLMError.noCommandsGenerated
             }
         }
@@ -941,65 +657,6 @@ class GeminiLLMService {
         return retryPrompt
     }
     
-    // MARK: - Context-Aware App Identification
-    private func identifyContextIrrelevantApps(unminimizedWindows: [LLMContext.WindowSummary], userInput: String) -> [String] {
-        let userInputLower = userInput.lowercased()
-        var irrelevantApps: [String] = []
-        
-        // Define context patterns and their irrelevant apps
-        let contextPatterns: [String: [String]] = [
-            // Coding context patterns
-            "cod": ["Steam", "Music", "Spotify", "Calendar", "Messages", "Mail", "Photos", "TV", "Podcasts"],
-            "develop": ["Steam", "Music", "Spotify", "Calendar", "Messages", "Mail", "Photos", "TV", "Podcasts"],
-            "program": ["Steam", "Music", "Spotify", "Calendar", "Messages", "Mail", "Photos", "TV", "Podcasts"],
-            
-            // Design context patterns  
-            "design": ["Steam", "Terminal", "Messages", "Mail", "Calendar", "Calculator"],
-            "figma": ["Steam", "Terminal", "Messages", "Mail", "Calendar", "Calculator"],
-            
-            // Research context patterns
-            "research": ["Steam", "Music", "Spotify", "Games", "Entertainment"],
-            "read": ["Steam", "Music", "Spotify", "Games", "Entertainment"],
-            
-            // General productivity patterns
-            "work": ["Steam", "Games", "Music", "TV", "Podcasts", "Entertainment"],
-            "focus": ["Steam", "Games", "Music", "TV", "Podcasts", "Entertainment", "Messages", "Mail"]
-        ]
-        
-        // Always irrelevant apps regardless of context
-        let alwaysIrrelevantApps = ["Steam", "Activity Monitor", "Console", "Disk Utility"]
-        
-        // Find matching context pattern
-        var contextIrrelevantApps: [String] = []
-        for (pattern, apps) in contextPatterns {
-            if userInputLower.contains(pattern) {
-                contextIrrelevantApps = apps
-                break
-            }
-        }
-        
-        // If no specific context found, use always irrelevant apps
-        if contextIrrelevantApps.isEmpty {
-            contextIrrelevantApps = alwaysIrrelevantApps
-        }
-        
-        // Find apps that are both unminimized and context-irrelevant
-        let unminimizedAppNames = Set(unminimizedWindows.map { $0.appName })
-        for app in contextIrrelevantApps {
-            if unminimizedAppNames.contains(app) {
-                irrelevantApps.append(app)
-            }
-        }
-        
-        // Limit minimization to avoid over-minimizing (keep at least 4-5 apps visible)
-        let maxToMinimize = max(0, unminimizedWindows.count - 5)
-        if irrelevantApps.count > maxToMinimize {
-            irrelevantApps = Array(irrelevantApps.prefix(maxToMinimize))
-        }
-        
-        return irrelevantApps
-    }
-    
     // MARK: - Command Constraint Validation
     private func validateCommandConstraints(_ commands: [WindowCommand], context: LLMContext) -> CommandValidationResult {
         var violations: [String] = []
@@ -1112,233 +769,6 @@ class GeminiLLMService {
         return updatedStates
     }
     
-    // MARK: - MINIMAL TEST METHOD
-    func testMinimalFunctionCalling(_ userInput: String) async throws -> [WindowCommand] {
-        print("\n🧪 MINIMAL TEST: \"\(userInput)\"")
-        
-        // Create minimal system prompt
-        let minimalSystemPrompt = """
-        You are a window management assistant. You MUST use the provided function tools.
-        NEVER respond with text explanations - ONLY use function calls.
-        
-        For any command to move or position a window, use the snap_window function.
-        
-        Examples:
-        - "move terminal to the left" → snap_window(app_name: "Terminal", position: "left")
-        - "move arc to the right" → snap_window(app_name: "Arc", position: "right")
-        """
-        
-        // Create minimal tool set (only snap_window)
-        let minimalTool = LLMTool(
-            name: "snap_window",
-            description: "Snap a window to a position with automatic sizing",
-            input_schema: LLMTool.ToolInputSchema(
-                properties: [
-                    "app_name": LLMTool.ToolInputSchema.PropertyDefinition(
-                        type: "string",
-                        description: "Name of the application whose window to snap"
-                    ),
-                    "position": LLMTool.ToolInputSchema.PropertyDefinition(
-                        type: "string",
-                        description: "Position to snap the window to",
-                        options: ["left", "right", "top", "bottom", "center"]
-                    )
-                ],
-                required: ["app_name", "position"]
-            )
-        )
-        
-        // Convert to Gemini format
-        let geminiTools = convertToGeminiTools([minimalTool])
-        
-        print("🔧 MINIMAL TOOLS: \(geminiTools.count) tool groups")
-        print("   - snap_window: 2 parameters (app_name, position)")
-        
-        // Create minimal request
-        let request = GeminiRequest(
-            contents: [GeminiContent(parts: [GeminiPart(text: userInput)])],
-            tools: geminiTools,
-            systemInstruction: GeminiSystemInstruction(parts: [GeminiPart(text: minimalSystemPrompt)]),
-            generationConfig: GeminiGenerationConfig(
-                temperature: 0.0,
-                maxOutputTokens: 1000  // Minimal token limit
-            ),
-            toolConfig: GeminiToolConfig(
-                functionCallingConfig: GeminiFunctionCallingConfig(
-                    mode: GeminiFunctionCallingConfig.Mode.any.stringValue
-                )
-            )
-        )
-        
-        print("🎯 FORCING FUNCTION CALLS: toolConfig.mode = ANY")
-        
-        // Enhanced request debugging
-        do {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = .prettyPrinted
-            let requestData = try encoder.encode(request)
-            
-            print("\n📤 MINIMAL REQUEST DEBUG:")
-            print("Size: \(requestData.count) bytes")
-            
-            if let requestJson = String(data: requestData, encoding: .utf8) {
-                print("Full JSON Request:")
-                print(requestJson)
-            }
-            
-            // Send the request
-            let response = try await sendMinimalRequest(request)
-            
-            // Parse response with extensive debugging
-            return try parseMinimalResponse(response)
-            
-        } catch {
-            print("❌ ENCODING ERROR: \(error)")
-            throw GeminiLLMError.parsingError("Failed to encode request: \(error)")
-        }
-    }
-    
-    // MARK: - Minimal Request Sender
-    private func sendMinimalRequest(_ request: GeminiRequest) async throws -> GeminiResponse {
-        let urlString = "\(baseURL)/\(model):generateContent?key=\(apiKey)"
-        guard let url = URL(string: urlString) else {
-            throw GeminiLLMError.invalidURL
-        }
-        
-        var urlRequest = URLRequest(url: url)
-        urlRequest.httpMethod = "POST"
-        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        urlRequest.setValue("en", forHTTPHeaderField: "Accept-Language")
-        
-        do {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = .prettyPrinted
-            let requestData = try encoder.encode(request)
-            urlRequest.httpBody = requestData
-            
-            print("\n🌐 SENDING MINIMAL REQUEST:")
-            print("URL: \(urlString)")
-            print("Method: POST")
-            print("Content-Type: application/json")
-            print("Accept-Language: en")
-            print("Body Size: \(requestData.count) bytes")
-            
-            let (data, response) = try await urlSession.data(for: urlRequest)
-            
-            print("\n📥 RECEIVED MINIMAL RESPONSE:")
-            print("Response Size: \(data.count) bytes")
-            
-            // Log raw response
-            if let responseJson = String(data: data, encoding: .utf8) {
-                print("RAW RESPONSE JSON:")
-                print(responseJson)
-            }
-            
-            guard let httpResponse = response as? HTTPURLResponse else {
-                throw GeminiLLMError.invalidResponse
-            }
-            
-            print("HTTP Status: \(httpResponse.statusCode)")
-            
-            guard 200...299 ~= httpResponse.statusCode else {
-                if let errorData = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    print("ERROR RESPONSE: \(errorData)")
-                    if let error = errorData["error"] as? [String: Any],
-                       let message = error["message"] as? String {
-                        throw GeminiLLMError.apiError(message)
-                    }
-                }
-                throw GeminiLLMError.httpError(httpResponse.statusCode)
-            }
-            
-            // Parse the response
-            let geminiResponse = try JSONDecoder().decode(GeminiResponse.self, from: data)
-            return geminiResponse
-            
-        } catch let error as GeminiLLMError {
-            throw error
-        } catch {
-            print("❌ NETWORK/PARSING ERROR: \(error)")
-            throw GeminiLLMError.networkError(error)
-        }
-    }
-    
-    // MARK: - Minimal Response Parser
-    private func parseMinimalResponse(_ response: GeminiResponse) throws -> [WindowCommand] {
-        var commands: [WindowCommand] = []
-        
-        print("\n🔍 PARSING MINIMAL RESPONSE:")
-        print("Candidates count: \(response.candidates.count)")
-        
-        if let usage = response.usageMetadata {
-            print("Token usage: \(usage.totalTokenCount ?? 0) total")
-        }
-        
-        guard let firstCandidate = response.candidates.first else {
-            throw GeminiLLMError.noCommandsGenerated
-        }
-        
-        print("Finish reason: \(firstCandidate.finishReason ?? "none")")
-        print("Content parts count: \(firstCandidate.content.parts.count)")
-        
-        for (index, part) in firstCandidate.content.parts.enumerated() {
-            print("\nPart \(index + 1):")
-            
-            if let functionCall = part.functionCall {
-                print("  🎯 FUNCTION CALL FOUND!")
-                print("  Function name: \(functionCall.name)")
-                print("  Arguments count: \(functionCall.args.count)")
-                
-                // Debug each argument
-                for (key, value) in functionCall.args {
-                    print("    \(key): \(value.value) (type: \(type(of: value.value)))")
-                }
-                
-                // Convert to WindowCommand
-                let toolUseInput = functionCall.args.mapValues { AnyCodable($0.value) }
-                let toolUse = LLMToolUse(
-                    id: UUID().uuidString,
-                    name: functionCall.name,
-                    input: toolUseInput
-                )
-                
-                if let command = ToolToCommandConverter.convertToolUse(toolUse) {
-                    commands.append(command)
-                    print("  ✅ Successfully converted to WindowCommand")
-                    print("    Action: \(command.action)")
-                    print("    Target: \(command.target)")
-                    print("    Position: \(command.position?.rawValue ?? "none")")
-                } else {
-                    print("  ❌ Failed to convert function call to WindowCommand")
-                }
-                
-            } else if let text = part.text {
-                print("  📝 TEXT FOUND (this is the problem!):")
-                print("    \"\(text)\"")
-                print("  ⚠️  Model should have called snap_window instead of generating text")
-                
-            } else {
-                print("  ❓ Unknown part type")
-            }
-        }
-        
-        print("\nFinal result: \(commands.count) commands generated")
-        
-        if commands.isEmpty {
-            let textResponses = firstCandidate.content.parts.compactMap { $0.text }
-            if !textResponses.isEmpty {
-                let fullText = textResponses.joined(separator: " ")
-                print("❌ FUNCTION CALLING FAILED - Model generated text instead of function calls")
-                print("Text: \(fullText)")
-                throw GeminiLLMError.noToolsUsed("Model generated text instead of function calls: \(fullText)")
-            } else {
-                print("❌ No function calls or text found")
-                throw GeminiLLMError.noCommandsGenerated
-            }
-        }
-        
-        return commands
-    }
 }
 
 // MARK: - Error Types

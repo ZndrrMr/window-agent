@@ -26,16 +26,12 @@ class WindowAIController: HotkeyManagerDelegate, LLMServiceDelegate {
     // MARK: - Core Components
     private let hotkeyManager = HotkeyManager()
     private let windowManager = WindowManager.shared
-    private let appLauncher = AppLauncher()
     private lazy var llmService = LLMService(windowManager: windowManager)
     private let subscriptionService = SubscriptionService()
     private let analyticsService = AnalyticsService()
     
     // Command executor that coordinates everything
-    private lazy var commandExecutor = CommandExecutor(
-        windowManager: windowManager,
-        appLauncher: appLauncher
-    )
+    private lazy var commandExecutor = CommandExecutor(windowManager: windowManager)
     
     // MARK: - UI Components
     private var commandWindow: CommandWindow!

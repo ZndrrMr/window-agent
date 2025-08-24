@@ -4,18 +4,16 @@ import Cocoa
 /// Test harness for LLM command processing
 class LLMCommandTester {
     
-    private let llmService: ClaudeLLMService
+    private let llmService: LLMService
     private let windowManager: WindowManager
     private let commandExecutor: CommandExecutor
     
     init() {
         self.windowManager = WindowManager.shared
-        // Get API key from environment or use placeholder
-        let apiKey = ProcessInfo.processInfo.environment["ANTHROPIC_API_KEY"] ?? "test-key"
-        self.llmService = ClaudeLLMService(apiKey: apiKey)
+        // LLMService uses Gemini with built-in API key
+        self.llmService = LLMService(windowManager: windowManager)
         
-        let appLauncher = AppLauncher()
-        self.commandExecutor = CommandExecutor(windowManager: windowManager, appLauncher: appLauncher)
+        self.commandExecutor = CommandExecutor(windowManager: windowManager)
     }
     
     /// Test a command and return the results
@@ -24,12 +22,10 @@ class LLMCommandTester {
         print("🧪 TESTING COMMAND: \"\(prompt)\"")
         print(String(repeating: "=", count: 80))
         
-        // Build context
-        let context = llmService.buildCurrentContext(windowManager: windowManager)
-        
         // Process through LLM
         let startTime = Date()
-        let commands = try await llmService.processCommand(prompt, context: context)
+        let response = try await llmService.processCommand(prompt)
+        let commands = response.commands
         let llmDuration = Date().timeIntervalSince(startTime)
         
         print("\n📊 LLM RESPONSE:")

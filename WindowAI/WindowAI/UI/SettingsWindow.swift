@@ -75,6 +75,12 @@ struct SettingsView: View {
                     Label("Privacy", systemImage: "hand.raised")
                 }
                 .tag(5)
+            
+            DevelopmentSettingsView()
+                .tabItem {
+                    Label("Development", systemImage: "hammer")
+                }
+                .tag(6)
         }
         .padding()
     }
@@ -519,6 +525,29 @@ struct PrivacySettingsView: View {
                 
                 Toggle("Debug mode", isOn: $preferences.debugMode)
                 Toggle("Verbose logging", isOn: $preferences.verboseLogging)
+            }
+            
+            Spacer()
+        }
+        .padding()
+    }
+}
+
+// MARK: - Development Settings
+struct DevelopmentSettingsView: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Text("Development & Testing")
+                .font(.title2)
+                .fontWeight(.semibold)
+            
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Testing features have been removed")
+                    .font(.headline)
+                
+                Text("Legacy layout engine testing functionality has been removed in favor of the new flexible positioning system.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
             
             Spacer()

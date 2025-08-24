@@ -3,13 +3,11 @@ import Foundation
 
 class CommandExecutor {
     private let windowManager: WindowManager
-    private let appLauncher: AppLauncher
     private let windowPositioner: WindowPositioner
     private let animationSelector = AnimationSelector.shared
     
-    init(windowManager: WindowManager, appLauncher: AppLauncher) {
+    init(windowManager: WindowManager) {
         self.windowManager = windowManager
-        self.appLauncher = appLauncher
         self.windowPositioner = WindowPositioner(windowManager: windowManager)
     }
     

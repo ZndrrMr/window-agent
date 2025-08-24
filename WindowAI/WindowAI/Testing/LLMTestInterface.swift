@@ -6,14 +6,12 @@ class LLMTestInterface {
     
     private let windowManager: WindowManager
     private let commandExecutor: CommandExecutor
-    private let appLauncher: AppLauncher
-    private var claudeService: ClaudeLLMService?
+    // ClaudeLLMService removed - using Gemini via LLMService
     private var llmService: LLMService?
     
     init() {
         self.windowManager = WindowManager.shared
-        self.appLauncher = AppLauncher()
-        self.commandExecutor = CommandExecutor(windowManager: windowManager, appLauncher: appLauncher)
+        self.commandExecutor = CommandExecutor(windowManager: windowManager)
         
         // Set up Gemini service (it has built-in API key)
         self.llmService = LLMService(windowManager: windowManager)
@@ -21,29 +19,23 @@ class LLMTestInterface {
     
     // MARK: - Setup
     func setupWithAPIKey(_ apiKey: String) {
-        claudeService = ClaudeLLMService(apiKey: apiKey)
-        print("✅ Claude LLM Service configured")
+        // Claude service removed - now using Gemini via LLMService
+        print("✅ Using Gemini LLM Service (built-in API key)")
     }
     
     // MARK: - Test Commands
     func testCommand(_ userInput: String) async {
-        guard let claude = claudeService else {
-            print("❌ No API key configured. Use setupWithAPIKey() first.")
+        guard let llmService = llmService else {
+            print("❌ LLM Service not configured.")
             return
         }
         
         print("\n🎯 Testing command: \"\(userInput)\"")
-        print("📊 Building system context...")
-        
-        let context = claude.buildCurrentContext(windowManager: windowManager)
-        print("   • Running apps: \(context.runningApps.count)")
-        print("   • Visible windows: \(context.visibleWindows.count)")
-        print("   • Displays: \(context.displayCount)")
         
         do {
-            print("🤖 Sending to Claude Sonnet 4...")
-            print("🔍 First tool schema:", WindowManagementTools.allTools.first?.input_schema ?? "No tools")
-            let commands = try await claude.processCommand(userInput, context: context)
+            print("🤖 Sending to Gemini 2.0 Flash...")
+            let response = try await llmService.processCommand(userInput)
+            let commands = response.commands
             
             print("✨ Received \(commands.count) command(s):")
             for (index, command) in commands.enumerated() {
@@ -70,8 +62,8 @@ class LLMTestInterface {
     
     // MARK: - Test Cases
     func runTestSuite() async {
-        guard claudeService != nil else {
-            print("❌ No API key configured. Use setupWithAPIKey() first.")
+        guard llmService != nil else {
+            print("❌ LLM Service not configured.")
             return
         }
         
@@ -112,7 +104,8 @@ class LLMTestInterface {
         print("")
         
         do {
-            let commands = try await llmService.testMinimalFunctionCalling(command)
+            let response = try await llmService.processCommand(command)
+            let commands = response.commands
             
             print("\n🎉 SUCCESS: Minimal test completed!")
             print("Generated \(commands.count) command(s)")
@@ -221,10 +214,10 @@ func testMinimalGemini(_ command: String = "move terminal to the left") async {
 // Example usage (you can call this from anywhere):
 /*
 
-// Test Claude (requires API key):
+// Test with Gemini (no API key needed - built-in):
 Task {
     await quickTestLLM(
-        apiKey: "your-anthropic-api-key-here",
+        apiKey: "", // Not used anymore
         command: "Open Safari and put it on the left half of the screen"
     )
 }

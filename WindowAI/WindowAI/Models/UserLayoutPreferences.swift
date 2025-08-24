@@ -103,18 +103,5 @@ class UserLayoutPreferences {
     }
 }
 
-// MARK: - Integration with LLM
-extension ClaudeLLMService {
-    func updateLayoutPreference(from command: WindowCommand, userFeedback: String? = nil) {
-        // Check if this command represents a user preference override
-        if let position = command.position, let size = command.size {
-            let notes = userFeedback ?? "User positioned \(command.target) explicitly"
-            UserLayoutPreferences.shared.setPreference(
-                for: command.target,
-                position: position.rawValue,
-                size: size.rawValue,
-                notes: notes
-            )
-        }
-    }
-}
+// MARK: - Integration with LLM (Updated for LLMService)
+// Note: ClaudeLLMService removed - this functionality should be moved to LLMService if needed

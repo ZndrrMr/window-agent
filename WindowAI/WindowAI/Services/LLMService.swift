@@ -52,37 +52,6 @@ class LLMService {
         )
     }
     
-    // MARK: - MINIMAL TEST FOR FUNCTION CALLING
-    func testMinimalFunctionCalling(_ userInput: String = "move terminal to the left") async throws -> [WindowCommand] {
-        print("\n🧪 STARTING MINIMAL FUNCTION CALLING TEST")
-        print(String(repeating: "=", count: 60))
-        
-        guard let gemini = geminiService else {
-            throw LLMServiceError.invalidAPIKey
-        }
-        
-        do {
-            let commands = try await gemini.testMinimalFunctionCalling(userInput)
-            
-            print("\n✅ TEST COMPLETED SUCCESSFULLY")
-            print("Commands generated: \(commands.count)")
-            
-            for (index, command) in commands.enumerated() {
-                print("Command \(index + 1):")
-                print("  Action: \(command.action)")
-                print("  Target: \(command.target)")
-                print("  Position: \(command.position?.rawValue ?? "none")")
-            }
-            
-            print(String(repeating: "=", count: 60))
-            return commands
-            
-        } catch {
-            print("\n❌ TEST FAILED: \(error)")
-            print(String(repeating: "=", count: 60))
-            throw error
-        }
-    }
     
     // MARK: - Provider-Specific Implementations
     private func processWithOpenAI(_ request: LLMRequest) async throws -> LLMResponse {
