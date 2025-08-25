@@ -234,23 +234,13 @@ class WindowPositioner {
             return CommandResult(success: false, message: "No position specified", command: command)
         }
         
-        // Apply learned position offset if available
-        if let preferredOffset = learningService.getPreferredPositionOffset(for: window.appName) {
-            position.x += preferredOffset.x
-            position.y += preferredOffset.y
-            print("📚 Applying learned position offset for \(window.appName): (\(Int(preferredOffset.x)), \(Int(preferredOffset.y)))")
-        }
+        // Learning service removed - no position offset applied
         
         // Apply flexible positioning if we have both position and size
         if command.position == .precise, let customSize = command.customSize {
             let bounds = CGRect(origin: position, size: customSize)
             
             // Record this arrangement for learning
-            learningService.recordWindowArrangement(
-                windows: [window],
-                arrangedBounds: [window.appName: bounds],
-                context: "flexible_position"
-            )
             
             let success = windowManager.setWindowBounds(window, bounds: bounds)
             
@@ -272,11 +262,6 @@ class WindowPositioner {
         // Record the arrangement for learning
         let currentBounds = window.bounds
         let newBounds = CGRect(origin: position, size: currentBounds.size)
-        learningService.recordWindowArrangement(
-            windows: [window],
-            arrangedBounds: [window.appName: newBounds],
-            context: "move_\(command.position?.rawValue ?? "custom")"
-        )
         
         let success = windowManager.moveWindow(window, to: position)
         
@@ -364,12 +349,7 @@ class WindowPositioner {
         
         let bounds = CGRect(origin: calculatedPosition, size: size)
         
-        // Record the snap arrangement for learning
-        learningService.recordWindowArrangement(
-            windows: [window],
-            arrangedBounds: [window.appName: bounds],
-            context: "snap_\(position.rawValue)_\(sizeType.rawValue)"
-        )
+        // Learning service removed
         
         let success = windowManager.setWindowBounds(window, bounds: bounds)
         
@@ -1270,29 +1250,10 @@ class WindowPositioner {
         let screenBounds = getFullDisplayBounds(displayIndex)
         print("🖥️ Using FULL screen bounds: \(screenBounds.size) for 100% coverage")
         
-        // Determine cascade style from parameters
-        let cascadeStyle: CascadeConfiguration.CascadeStyle
-        switch command.parameters?["style"] {
-        case "intelligent", "smart":
-            cascadeStyle = .smart
-        case "compact", "tight":
-            cascadeStyle = .tight
-        case "spread":
-            cascadeStyle = .spread
-        case "diagonal":
-            cascadeStyle = .diagonal
-        case "fan":
-            cascadeStyle = .fan
-        default:
-            cascadeStyle = .smart
-        }
+        // Cascade configuration removed - using simple style
+        // Style parameter ignored - cascade system simplified
         
-        // Create cascade configuration
-        let cascadeConfig = CascadeConfiguration(
-            style: cascadeStyle,
-            offset: cascadeStyle == .tight ? .tight : .standard,
-            priority: command.parameters?["focus"] == "true" ? .primary : .balanced
-        )
+        // Cascade configuration removed - using simple approach
         
         // Use FlexibleLayoutEngine to generate focus-aware layout
         let windowNames = windows.map { $0.appName }
@@ -1391,38 +1352,33 @@ class WindowPositioner {
             }
         }
         
-        // Record the cascade arrangement for learning
-        if !arrangedBounds.isEmpty {
-            learningService.recordWindowArrangement(
-                windows: windows,
-                arrangedBounds: arrangedBounds,
-                context: "cascade_\(cascadeStyle.rawValue)"
-            )
-        }
+        // Learning service removed
+        // arrangedBounds variable still contains the positioned windows
         
-        // If we used existing cascade positioner as fallback
+        // Simplified cascade fallback (cascade positioner removed)
         if results.isEmpty {
-            let userContext = UserContext(
-                activity: command.parameters?["activity"],
-                focusMode: command.parameters?["focus"] == "true"
-            )
+            // Use simple tile fallback when dynamic system fails
+            let windowCount = windows.count
+            let cols = windowCount <= 2 ? windowCount : 2
+            let rows = (windowCount + cols - 1) / cols
             
-            let style: CascadeStyle = command.parameters?["style"] == "compact" ? .compact : .intelligent
-            let arrangements = cascadePositioner.arrangeCascade(
-                windows: windows,
-                style: style,
-                context: userContext,
-                screenBounds: screenBounds,
-                displayIndex: displayIndex
-            )
+            let windowWidth = screenBounds.width / CGFloat(cols)
+            let windowHeight = screenBounds.height / CGFloat(rows)
             
-            for arrangement in arrangements {
-                if windowManager.setWindowBounds(arrangement.window, bounds: arrangement.targetBounds) {
-                    results.append("Cascaded \(arrangement.window.appName) as \(arrangement.role.rawValue)")
+            for (index, window) in windows.enumerated() {
+                let col = index % cols
+                let row = index / cols
+                
+                let x = CGFloat(col) * windowWidth
+                let y = CGFloat(row) * windowHeight
+                let bounds = CGRect(x: x, y: y, width: windowWidth, height: windowHeight)
+                
+                if windowManager.setWindowBounds(window, bounds: bounds) {
+                    results.append("Tiled \(window.appName) at position \(col),\(row)")
                     
-                    if arrangement.layerIndex == 0 {
+                    if index == 0 {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            _ = self.windowManager.focusWindow(arrangement.window)
+                            _ = self.windowManager.focusWindow(window)
                         }
                     }
                 }
@@ -1700,21 +1656,13 @@ class WindowPositioner {
             return
         }
         
-        // Apply learned position offset if available
-        if let preferredOffset = learningService.getPreferredPositionOffset(for: window.appName) {
-            position.x += preferredOffset.x
-            position.y += preferredOffset.y
-        }
+        // Learning service removed - no position offset applied
         
-        let preset = AnimationPresets.presetForOperation(.move)
-        windowManager.moveWindowAnimated(window, to: position, preset: preset) {
-            // Record this arrangement for learning
+        // Animation system removed - use instant move
+        let success = windowManager.moveWindow(window, to: position)
+        if success {
+            // Learning service removed
             let newBounds = CGRect(origin: position, size: window.bounds.size)
-            self.learningService.recordWindowArrangement(
-                windows: [window],
-                arrangedBounds: [window.appName: newBounds],
-                context: "animated_move_\(command.position?.rawValue ?? "custom")"
-            )
             
             let message = "Animated move of \(command.target) to \(position)"
             completion(CommandResult(success: true, message: message, command: command))
@@ -1739,11 +1687,10 @@ class WindowPositioner {
             return
         }
         
-        let preset = AnimationPresets.presetForOperation(.resize)
-        windowManager.resizeWindowAnimated(window, to: size, preset: preset) {
-            let message = "Animated resize of \(command.target) to \(size)"
-            completion(CommandResult(success: true, message: message, command: command))
-        }
+        // Animation system removed - use instant resize
+        let success = windowManager.resizeWindow(window, to: size)
+        let message = success ? "Resized \(command.target) to \(size)" : "Failed to resize \(command.target)"
+        completion(CommandResult(success: success, message: message, command: command))
     }
     
     private func executeAnimatedSnap(_ command: WindowCommand, completion: @escaping (CommandResult) -> Void) {
@@ -1830,22 +1777,16 @@ class WindowPositioner {
                 return true // For now, animate all visible windows
             }
             
-            // Create animated arrangement with staggered timing
-            let configuration = AnimationConfiguration(
-                preset: AnimationPresets.presetForContext(command.target),
-                staggerDelay: 0.1,
-                coordinatedExecution: true,
-                respectsReducedMotion: true
-            )
-            
-            // Apply the current positions as animated transitions
-            let operations = targetWindows.map { window in
-                (window, window.bounds)
+            // Animation system removed - apply positions instantly
+            // Apply the current positions immediately
+            for (index, window) in targetWindows.enumerated() {
+                // Window positions are already set, just ensure focus if needed
+                if index == 0 {
+                    _ = windowManager.focusWindow(window)
+                }
             }
             
-            windowManager.animateWindowsCoordinated(operations, configuration: configuration) {
-                completion(result)
-            }
+            completion(result)
         } else {
             completion(result)
         }
@@ -1856,15 +1797,8 @@ class WindowPositioner {
         let result = tileWindows(command)
         
         if result.success {
-            // Animate the tiling result
-            let allWindows = windowManager.getAllWindows()
-            let operations = allWindows.map { window in
-                (window, window.bounds)
-            }
-            
-            windowManager.animateWindowsCoordinated(operations, configuration: .performance) {
-                completion(result)
-            }
+            // Animation system removed - operation complete
+            completion(result)
         } else {
             completion(result)
         }

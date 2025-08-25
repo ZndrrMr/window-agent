@@ -553,46 +553,32 @@ class WindowManager {
                 
                 // Small delay then animate to target bounds
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    AnimationQueue.shared.queueRestoreAnimation(for: windowInfo, to: targetBounds)
+                    // Animation system removed - instant restore
+                    self.setWindowBounds(windowInfo, bounds: targetBounds)
                     completion?()
                 }
             } else {
                 completion?()
             }
         } else {
-            AnimationQueue.shared.queueRestoreAnimation(for: windowInfo, to: targetBounds)
+            // Animation system removed - instant restore
+            setWindowBounds(windowInfo, bounds: targetBounds)
             completion?()
         }
     }
     
-    /// Focus window with subtle animation
+    /// Focus window (simplified - no animation)
     func focusWindowAnimated(_ windowInfo: WindowInfo, completion: (() -> Void)? = nil) {
-        // Focus immediately, then add subtle animation
-        let focusSuccess = focusWindow(windowInfo)
-        
-        if focusSuccess {
-            AnimationQueue.shared.queueFocusAnimation(for: windowInfo)
-        }
-        
+        // Animation system removed - instant focus
+        let _ = focusWindow(windowInfo)
         completion?()
     }
     
-    /// Snap window to position with quick animation
+    /// Snap window to position (simplified - no animation)
     func snapWindowAnimated(_ windowInfo: WindowInfo, to bounds: CGRect, completion: (() -> Void)? = nil) {
-        // Check if animations are enabled
-        guard UserPreferences.shared.animateWindowMovement else {
-            _ = setWindowBounds(windowInfo, bounds: bounds)
-            completion?()
-            return
-        }
-        
-        AnimationQueue.shared.queueAnimation(
-            id: "snap_\(windowInfo.appName)_\(Date().timeIntervalSince1970)",
-            windowInfo: windowInfo,
-            operation: .bounds(bounds),
-            preset: AnimationPresets.snap,
-            completion: completion
-        )
+        // Animation system removed - instant snap
+        _ = setWindowBounds(windowInfo, bounds: bounds)
+        completion?()
     }
     
     // MARK: - Batch Animated Operations
@@ -620,12 +606,11 @@ class WindowManager {
             operations.append((window, bounds))
         }
         
-        AnimationQueue.shared.queueCoordinatedAnimations(
-            operations.map { ($0.0, .bounds($0.1)) },
-            preset: AnimationPresets.cascade,
-            staggerDelay: 0.1,
-            completion: completion
-        )
+        // Animation system removed - apply instantly
+        for (window, bounds) in operations {
+            setWindowBounds(window, bounds: bounds)
+        }
+        completion?()
     }
     
     /// Arrange workspace with smooth transitions
@@ -636,12 +621,13 @@ class WindowManager {
             return
         }
         
-        AnimationQueue.shared.queueWorkspaceTransition(
-            windows: windows,
-            targetBounds: layout,
-            configuration: AnimationConfiguration.fromSystemPreferences(),
-            completion: completion
-        )
+        // Animation system removed - apply instantly
+        for (index, window) in windows.enumerated() {
+            if index < layout.count {
+                setWindowBounds(window, bounds: layout[index])
+            }
+        }
+        completion?()
     }
 
     // MARK: - Window Manipulation
