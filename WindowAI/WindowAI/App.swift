@@ -65,7 +65,7 @@ class WindowAIController: HotkeyManagerDelegate, LLMServiceDelegate {
         // }
         
         // DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
-        //     XRayWindowManager.shared.runPerformanceTests()
+        // X-Ray system removed for simplification
         // }
         #endif
         
@@ -490,8 +490,7 @@ extension WindowAIController {
     func hotkeyPressed() {
         print("🔥 Hotkey pressed! Window visible: \(commandWindow.isVisible)")
         
-        // Cancel any pending animations to ensure UI responsiveness
-        AnimationQueue.shared.emergencyReset()
+        // Animation system removed - no need to reset animation queue
         
         // Prevent multiple rapid hotkey presses
         DispatchQueue.main.async {
@@ -516,11 +515,11 @@ extension WindowAIController {
             
             // DEVELOPMENT: Debug Finder windows before showing overlay
             #if DEBUG
-            XRayWindowManager.shared.debugFinderWindows()
+            print("🔧 Debug function removed - X-Ray system simplified out")
             #endif
             
-            // Toggle X-Ray overlay
-            XRayWindowManager.shared.toggleXRayOverlay()
+            // X-Ray overlay system removed for simplification
+            print("🔧 X-Ray overlay removed - focusing on core LLM functionality")
         }
     }
     
@@ -544,7 +543,7 @@ extension WindowAIController {
         
         // Ensure X-Ray overlay is hidden before capturing (on main thread)
         await MainActor.run {
-            XRayWindowManager.shared.hideXRayOverlay()
+            // X-Ray overlay system removed
         }
         
         // Wait a moment for any X-Ray state to clear

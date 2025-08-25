@@ -4,56 +4,16 @@ import Foundation
 class CommandExecutor {
     private let windowManager: WindowManager
     private let windowPositioner: WindowPositioner
-    private let animationSelector = AnimationSelector.shared
     
     init(windowManager: WindowManager) {
         self.windowManager = windowManager
         self.windowPositioner = WindowPositioner(windowManager: windowManager)
     }
     
-    // MARK: - Animated Command Execution
+    // MARK: - Command Execution (Simplified - No Animations)
     func executeCommandsAnimated(_ commands: [WindowCommand]) async -> [CommandResult] {
-        var results: [CommandResult] = []
-        
-        print("\n🎬 ANIMATED COMMAND EXECUTOR:")
-        print("  Received \(commands.count) command(s) to execute with animations")
-        
-        // Determine if this is a coordinated workspace operation
-        let isWorkspaceOperation = commands.count > 1 && commands.allSatisfy { 
-            $0.action == .move || $0.action == .resize || $0.action == .snap 
-        }
-        
-        if isWorkspaceOperation {
-            // Execute as coordinated workspace transition
-            results = await executeCoordinatedWorkspaceTransition(commands)
-        } else {
-            // Execute commands individually with animations
-            for (index, command) in commands.enumerated() {
-                print("\n  Executing animated command \(index + 1)/\(commands.count): \(command.action.rawValue) \(command.target)")
-                
-                let result = await executeCommandAnimated(command)
-                results.append(result)
-                
-                print("    Result: \(result.success ? "✅" : "❌") \(result.message)")
-                
-                // If a command fails and it's critical, stop execution
-                if !result.success && (command.action == .open || command.action == .focus) {
-                    print("⚠️ Critical command failed, stopping execution: \(result.message)")
-                    break
-                }
-            }
-        }
-        
-        print("\n  Animated execution complete: \(results.count) results")
-        return results
-    }
-    
-    func executeCommandAnimated(_ command: WindowCommand) async -> CommandResult {
-        return await withCheckedContinuation { continuation in
-            windowPositioner.executeCommandAnimated(command) { result in
-                continuation.resume(returning: result)
-            }
-        }
+        // Simplified to use instant execution (no animations)
+        return await executeCommands(commands)
     }
 
     // MARK: - Command Execution
@@ -176,82 +136,7 @@ class CommandExecutor {
         return .zero
     }
     
-    // MARK: - Coordinated Workspace Transitions
-    
-    private func executeCoordinatedWorkspaceTransition(_ commands: [WindowCommand]) async -> [CommandResult] {
-        print("🎭 Executing coordinated workspace transition with \(commands.count) commands")
-        
-        // Execute positioning immediately (non-animated) to get windows in place
-        var results: [CommandResult] = []
-        
-        for command in commands {
-            let result = windowPositioner.executeCommand(command)
-            results.append(result)
-        }
-        
-        // Don't block on animations - just trigger them and return immediately
-        Task { @MainActor in
-            // Build context from commands
-            let context = buildAnimationContext(from: commands)
-            
-            // Get windows that were positioned and add subtle animation effects
-            var windowOperations: [(WindowInfo, CGRect)] = []
-            
-            for command in commands {
-                if let windows = getTargetWindows(command.target), let window = windows.first {
-                    // Use current bounds (already positioned) for subtle animation
-                    windowOperations.append((window, window.bounds))
-                }
-            }
-            
-            // Add very brief visual feedback animation (optional)
-            if !windowOperations.isEmpty && windowOperations.count <= 3 {
-                // Only animate if it's a small number of windows to avoid blocking
-                await self.animateWorkspaceTransition(windowOperations, context: context)
-            }
-        }
-        
-        return results
-    }
-    
-    private func animateWorkspaceTransition(_ operations: [(WindowInfo, CGRect)], context: AnimationContext) async {
-        return await withCheckedContinuation { continuation in
-            // Select optimal configuration for this workspace transition
-            let windowCount = operations.count
-            let config = animationSelector.selectConfiguration(
-                for: operations.map { _ in .move }, // All are essentially move operations
-                windows: operations.map { $0.0 },
-                context: context
-            )
-            
-            print("🎬 Starting workspace transition animation:")
-            print("  Windows: \(windowCount)")
-            print("  Preset: \(config.preset.name)")
-            print("  Stagger: \(config.staggerDelay)s")
-            
-            windowManager.animateWindowsCoordinated(operations, configuration: config) {
-                print("✨ Workspace transition animation completed")
-                continuation.resume()
-            }
-        }
-    }
-    
-    private func buildAnimationContext(from commands: [WindowCommand]) -> AnimationContext {
-        // Analyze commands to determine workspace type
-        let workspaceType = determineWorkspaceType(from: commands)
-        
-        // Calculate confidence based on command specificity
-        let confidence = commands.allSatisfy { $0.position != nil || $0.customPosition != nil } ? 0.9 : 0.6
-        
-        return AnimationContext(
-            workspaceType: workspaceType,
-            confidence: confidence,
-            performanceMode: commands.count > 8, // Performance mode for many windows
-            isFocusMode: workspaceType.lowercased().contains("focus"),
-            isPresentationMode: workspaceType.lowercased().contains("presentation"),
-            userPresent: true
-        )
-    }
+    // MARK: - Simplified Workspace Transitions (No Animation System)
     
     private func determineWorkspaceType(from commands: [WindowCommand]) -> String {
         // Look for common app patterns
@@ -268,33 +153,6 @@ class CommandExecutor {
         } else {
             return "general"
         }
-    }
-    
-    private func calculateFinalBounds(for command: WindowCommand, window: WindowInfo) -> CGRect {
-        let displayIndex = command.display ?? 0
-        
-        // Calculate position
-        var position: CGPoint
-        if let customPosition = command.customPosition {
-            position = customPosition
-        } else if let windowPosition = command.position {
-            let size = command.customSize ?? window.bounds.size
-            position = windowPositioner.calculatePosition(windowPosition, size: size, on: displayIndex)
-        } else {
-            position = window.bounds.origin
-        }
-        
-        // Calculate size
-        var size: CGSize
-        if let customSize = command.customSize {
-            size = customSize
-        } else if let windowSize = command.size {
-            size = windowPositioner.calculateSize(windowSize, for: window.appName, on: displayIndex)
-        } else {
-            size = window.bounds.size
-        }
-        
-        return CGRect(origin: position, size: size)
     }
     
     private func getTargetWindows(_ target: String) -> [WindowInfo]? {

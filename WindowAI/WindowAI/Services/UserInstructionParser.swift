@@ -6,7 +6,6 @@ import CoreGraphics
 class UserInstructionParser {
     static let shared = UserInstructionParser()
     
-    private let learningService = LearningService.shared
     private let userDefaults = UserDefaults.standard
     
     private init() {}

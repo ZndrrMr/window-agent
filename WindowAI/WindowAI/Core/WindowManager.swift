@@ -508,61 +508,28 @@ class WindowManager {
     
     // MARK: - Animated Window Operations
     
-    /// Move window with animation
-    func moveWindowAnimated(_ windowInfo: WindowInfo, to position: CGPoint, preset: AnimationPreset = AnimationPresets.defaultSmooth, completion: (() -> Void)? = nil) {
-        AnimationQueue.shared.queueAnimation(
-            id: "move_\(windowInfo.appName)_\(Date().timeIntervalSince1970)",
-            windowInfo: windowInfo,
-            operation: .move(position),
-            preset: preset,
-            completion: completion
-        )
+    /// Move window instantly (animation system removed for simplification)
+    func moveWindowAnimated(_ windowInfo: WindowInfo, to position: CGPoint, preset: Any? = nil, completion: (() -> Void)? = nil) {
+        moveWindow(windowInfo, to: position)
+        completion?()
     }
     
-    /// Resize window with animation
-    func resizeWindowAnimated(_ windowInfo: WindowInfo, to size: CGSize, preset: AnimationPreset = AnimationPresets.defaultSmooth, completion: (() -> Void)? = nil) {
-        AnimationQueue.shared.queueAnimation(
-            id: "resize_\(windowInfo.appName)_\(Date().timeIntervalSince1970)",
-            windowInfo: windowInfo,
-            operation: .resize(size),
-            preset: preset,
-            completion: completion
-        )
+    /// Resize window instantly (animation system removed for simplification)
+    func resizeWindowAnimated(_ windowInfo: WindowInfo, to size: CGSize, preset: Any? = nil, completion: (() -> Void)? = nil) {
+        resizeWindow(windowInfo, to: size)
+        completion?()
     }
     
-    /// Set window bounds with animation
-    func setWindowBoundsAnimated(_ windowInfo: WindowInfo, bounds: CGRect, preset: AnimationPreset = AnimationPresets.defaultSmooth, completion: (() -> Void)? = nil) {
-        AnimationQueue.shared.queueAnimation(
-            id: "bounds_\(windowInfo.appName)_\(Date().timeIntervalSince1970)",
-            windowInfo: windowInfo,
-            operation: .bounds(bounds),
-            preset: preset,
-            completion: completion
-        )
+    /// Set window bounds instantly (animation system removed for simplification)
+    func setWindowBoundsAnimated(_ windowInfo: WindowInfo, bounds: CGRect, preset: Any? = nil, completion: (() -> Void)? = nil) {
+        setWindowBounds(windowInfo, bounds: bounds)
+        completion?()
     }
     
-    /// Maximize window with animation
+    /// Maximize window instantly (animation system removed for simplification)
     func maximizeWindowAnimated(_ windowInfo: WindowInfo, completion: (() -> Void)? = nil) {
-        // Calculate maximize bounds
-        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(windowInfo.bounds.origin) }) ?? NSScreen.main else {
-            completion?()
-            return
-        }
-        
-        let maximizeBounds = CGRect(
-            x: screen.frame.origin.x,
-            y: screen.visibleFrame.origin.y,
-            width: screen.frame.width,
-            height: screen.visibleFrame.height
-        )
-        
-        AnimationQueue.shared.queueAnimation(
-            id: "maximize_\(windowInfo.appName)_\(Date().timeIntervalSince1970)",
-            windowInfo: windowInfo,
-            operation: .bounds(maximizeBounds),
-            preset: AnimationPresets.maximize,
-            completion: completion
-        )
+        maximizeWindow(windowInfo)
+        completion?()
     }
     
     /// Restore window with animation
@@ -630,18 +597,13 @@ class WindowManager {
     
     // MARK: - Batch Animated Operations
     
-    /// Animate multiple windows in coordinated fashion
-    func animateWindowsCoordinated(_ operations: [(WindowInfo, CGRect)], configuration: AnimationConfiguration = .default, completion: (() -> Void)? = nil) {
-        let windowOperations = operations.map { (windowInfo, bounds) in
-            (windowInfo, AnimationOperation.bounds(bounds))
+    /// Apply multiple window operations (simplified - no animations)
+    func animateWindowsCoordinated(_ operations: [(WindowInfo, CGRect)], completion: (() -> Void)? = nil) {
+        // Simplified to instant application (no animation system)
+        for (windowInfo, bounds) in operations {
+            setWindowBounds(windowInfo, bounds: bounds)
         }
-        
-        AnimationQueue.shared.queueCoordinatedAnimations(
-            windowOperations,
-            preset: configuration.preset,
-            staggerDelay: configuration.staggerDelay,
-            completion: completion
-        )
+        completion?()
     }
     
     /// Cascade multiple windows with staggered animation

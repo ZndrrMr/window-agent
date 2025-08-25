@@ -659,116 +659,18 @@ class GeminiLLMService {
     
     // MARK: - Command Constraint Validation
     private func validateCommandConstraints(_ commands: [WindowCommand], context: LLMContext) -> CommandValidationResult {
-        var violations: [String] = []
-        var isValid = true
-        
-        // Convert current windows to WindowState objects
-        let currentWindowStates = WorkspaceAnalyzer.shared.convertToWindowStates(context.visibleWindows)
-        
-        // Create a working copy of window states to apply commands
-        var workingWindowStates = currentWindowStates
-        
-        // Apply each command to the working window states
-        for command in commands {
-            workingWindowStates = applyCommandToWindowStates(command, windowStates: workingWindowStates, context: context)
-        }
-        
-        // Validate the final layout
-        let validator = ConstraintValidator.shared
-        let validation = validator.validateConstraints(windows: workingWindowStates)
-        
-        // Check for violations
-        for violation in validation.violations {
-            violations.append("\(violation.window) would have only \(Int(violation.actualArea))px² visible (needs \(Int(violation.requiredArea))px²)")
-            isValid = false
-        }
+        // Simplified validation - just return valid (no complex constraint system)
+        let violations: [String] = []
+        let isValid = true
         
         return CommandValidationResult(isValid: isValid, violations: violations)
     }
     
-    // Helper to apply a command to window states for validation
-    private func applyCommandToWindowStates(_ command: WindowCommand, windowStates: [WindowState], context: LLMContext) -> [WindowState] {
-        var updatedStates = windowStates
-        
-        // Find the window to update
-        if let windowIndex = updatedStates.firstIndex(where: { $0.app == command.target }) {
-            let currentWindow = updatedStates[windowIndex]
-            
-            // Check if this is a flexible_position command with minimize parameter
-            let isMinimizeCommand = command.parameters?["minimize"] == "true"
-            let isUnminimizeCommand = command.parameters?["minimize"] == "false"
-            
-            // Apply the command based on its type
-            switch command.action {
-            case .move:
-                // For flexible_position commands, check minimize parameter first
-                if isMinimizeCommand {
-                    let updatedWindow = WindowState(
-                        app: currentWindow.app,
-                        id: currentWindow.id,
-                        frame: currentWindow.frame,
-                        layer: currentWindow.layer,
-                        displayIndex: currentWindow.displayIndex,
-                        isMinimized: true
-                    )
-                    updatedStates[windowIndex] = updatedWindow
-                } else if let customPosition = command.customPosition, let customSize = command.customSize {
-                    // Calculate new frame based on display resolution
-                    let displayResolution = context.screenResolutions.first ?? CGSize(width: 1440, height: 900)
-                    let newFrame = CGRect(
-                        x: (customPosition.x / 100) * displayResolution.width,
-                        y: (customPosition.y / 100) * displayResolution.height,
-                        width: (customSize.width / 100) * displayResolution.width,
-                        height: (customSize.height / 100) * displayResolution.height
-                    )
-                    
-                    // Update the window state (unminimize if this is positioning)
-                    let updatedWindow = WindowState(
-                        app: currentWindow.app,
-                        id: currentWindow.id,
-                        frame: newFrame,
-                        layer: currentWindow.layer,
-                        displayIndex: currentWindow.displayIndex,
-                        isMinimized: false
-                    )
-                    
-                    updatedStates[windowIndex] = updatedWindow
-                } else if isUnminimizeCommand {
-                    // This is just an unminimize command without positioning
-                    let updatedWindow = WindowState(
-                        app: currentWindow.app,
-                        id: currentWindow.id,
-                        frame: currentWindow.frame,
-                        layer: currentWindow.layer,
-                        displayIndex: currentWindow.displayIndex,
-                        isMinimized: false
-                    )
-                    updatedStates[windowIndex] = updatedWindow
-                }
-            case .minimize:
-                let updatedWindow = WindowState(
-                    app: currentWindow.app,
-                    id: currentWindow.id,
-                    frame: currentWindow.frame,
-                    layer: currentWindow.layer,
-                    displayIndex: currentWindow.displayIndex,
-                    isMinimized: true
-                )
-                updatedStates[windowIndex] = updatedWindow
-            case .focus:
-                // Focus doesn't change layout, so no changes needed for constraint validation
-                break
-            case .close:
-                // Remove the window from the states
-                updatedStates.remove(at: windowIndex)
-            default:
-                break
-            }
-        }
-        
-        return updatedStates
+    // Helper to apply a command to window states for validation (simplified)
+    private func applyCommandToWindowStates(_ command: WindowCommand, windowStates: [WindowInfo], context: LLMContext) -> [WindowInfo] {
+        // Simplified validation - just return the original states
+        return windowStates
     }
-    
 }
 
 // MARK: - Error Types

@@ -9,12 +9,9 @@ class WindowPositioner {
     
     private let windowManager: WindowManager
     private let constraintsManager = AppConstraintsManager.shared
-    private let cascadePositioner: CascadePositioner
-    private let learningService = LearningService.shared
     
     init(windowManager: WindowManager) {
         self.windowManager = windowManager
-        self.cascadePositioner = CascadePositioner(windowManager: windowManager)
     }
     
     // MARK: - Animated Command Execution
