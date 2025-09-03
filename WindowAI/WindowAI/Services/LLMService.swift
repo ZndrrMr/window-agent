@@ -24,7 +24,7 @@ class LLMService {
     
     private func setupGeminiService() {
         // Use provided API key
-        let apiKey = "AIzaSyD39koI_VvH18yY_K9WDu9nyAKcg3W5ej0"
+        let apiKey = "YOUR_GEMINI_API_KEY_HERE"
         geminiService = GeminiLLMService(apiKey: apiKey)
         
         // Also update preferences

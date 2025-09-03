@@ -163,7 +163,7 @@ swift-format --in-place --recursive .
 
   - **GeminiLLMService** receives command with rich context (primary service)
   - **Model**: gemini-2.0-flash with enforced function calling
-  - **API Key**: AIzaSyD39koI_VvH18yY_K9WDu9nyAKcg3W5ej0
+  - **API Key**: [Your Gemini API Key]
   - System prompt includes:
     - All visible windows with positions, sizes, and states
     - Running applications and bundle IDs
@@ -942,7 +942,7 @@ flexible_position(
 - **Purpose**: Gemini 2.0 Flash integration with function calling enforcement
 - **Status**: Complete implementation with comprehensive tool calling
 - **Features**: toolConfig.mode = "ANY", dynamic token limits, parallel context building
-- **API**: AIzaSyD39koI_VvH18yY_K9WDu9nyAKcg3W5ej0 (working key)
+- **API**: [Your Gemini API Key]
 
 #### **LLMService.swift** ✅ **LLM Wrapper/Coordinator**
 - **Purpose**: LLM service wrapper and coordinator
