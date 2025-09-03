@@ -210,7 +210,7 @@ class WindowAIController: HotkeyManagerDelegate, LLMServiceDelegate {
     func testLLMIntegration() {
           Task {
               let tester = LLMTestInterface()
-              tester.setupWithAPIKey("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")
+              tester.setupWithAPIKey("YOUR_ANTHROPIC_API_KEY_HERE")
               await tester.testCommand("Open Safari and put it on the left half")
           }
       }
