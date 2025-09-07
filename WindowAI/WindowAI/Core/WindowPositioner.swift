@@ -753,6 +753,21 @@ class WindowPositioner {
             return CommandResult(success: success, message: results.joined(separator: ", "), command: command)
         }
         
+        // First, check if this is a layout command (new simplified system)
+        if let _ = WindowLayout(rawValue: command.target) {
+            // Extract apps from command parameters
+            let appsString = command.parameters?["apps"] ?? ""
+            let appNames = appsString.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            let focusApp = command.parameters?["focus_app"]?.isEmpty == false ? command.parameters?["focus_app"] : nil
+            
+            // Use LayoutService to apply the layout
+            let layoutService = LayoutService(windowManager: windowManager)
+            let result = layoutService.applyLayout(command.target, to: appNames, focusApp: focusApp)
+            
+            return CommandResult(success: result.success, message: result.message, command: command)
+        }
+        
+        // Fall back to workspace system for actual workspace names
         let workspaceManager = WorkspaceManager.shared
         
         // Try to find a matching workspace

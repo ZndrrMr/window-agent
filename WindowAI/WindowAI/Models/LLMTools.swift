@@ -412,9 +412,7 @@ class ToolToCommandConverter {
             return convertMinimizeApp(input)
         case "focus_app":
             return convertFocusApp(input)
-        case "flexible_position":
-            // Legacy tool - redirect to new system
-            return convertFlexiblePosition(input)
+        // flexible_position removed - use apply_layout tool instead
         default:
             return nil
         }
