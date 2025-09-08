@@ -49,6 +49,12 @@
     <key>NSAccessibilityUsageDescription</key>
     <string>WindowAI needs accessibility access to control and position windows from other applications. This allows you to move, resize, and arrange windows using natural language commands.</string>
     
+    <key>NSMicrophoneUsageDescription</key>
+    <string>WindowAI needs microphone access to transcribe your voice commands into text. This allows you to control windows using voice input instead of typing.</string>
+    
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>WindowAI uses speech recognition to convert your voice commands into window management actions. Your speech is processed to understand commands like 'move Safari to the left half'.</string>
+    
     <!-- App Behavior -->
     <key>LSUIElement</key>
     <true/>

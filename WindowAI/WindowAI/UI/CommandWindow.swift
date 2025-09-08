@@ -1,14 +1,19 @@
 import Cocoa
 import SwiftUI
+import Speech
 
 class CommandWindow: NSWindow {
     private let preferences = UserPreferences.shared
     private var commandTextField: SmartCommandTextField!
     private var suggestionLabel: NSTextField!
     private var loadingIndicator: NSProgressIndicator!
+    private var microphoneButton: NSButton!
     private var containerView: NSView!
     private var blurView: NSVisualEffectView!
     private var globalMonitor: Any?
+    
+    // Speech Recognition
+    private lazy var speechService = SpeechRecognitionService()
     
     // Autocomplete system
     private var autocompleteWindow: AutocompleteWindow!
@@ -122,6 +127,27 @@ class CommandWindow: NSWindow {
         loadingIndicator.isHidden = true
         loadingIndicator.wantsLayer = true
         
+        // Microphone button for voice input
+        microphoneButton = NSButton()
+        microphoneButton.title = ""
+        microphoneButton.isBordered = false
+        microphoneButton.wantsLayer = true
+        microphoneButton.target = self
+        microphoneButton.action = #selector(microphoneButtonTapped(_:))
+        
+        // Use SF Symbols for microphone icon
+        if let micIcon = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: "Microphone") {
+            micIcon.size = NSSize(width: 20, height: 20)
+            microphoneButton.image = micIcon
+        }
+        
+        // Style the microphone button
+        microphoneButton.layer?.cornerRadius = 12
+        microphoneButton.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.1).cgColor
+        microphoneButton.bezelStyle = .regularSquare
+        microphoneButton.imagePosition = .imageOnly
+        microphoneButton.toolTip = "Click to start voice input"
+        
         // Add multiple subtle gradient overlays for depth
         let gradientLayer = CAGradientLayer()
         gradientLayer.colors = [
@@ -149,8 +175,16 @@ class CommandWindow: NSWindow {
         autocompleteWindow = AutocompleteWindow()
         autocompleteWindow.dropdownDelegate = self
         
+        // Setup speech service callback
+        speechService.onTranscriptionCompleted = { [weak self] transcribedText in
+            Task { @MainActor in
+                self?.handleTranscriptionCompleted(transcribedText)
+            }
+        }
+        
         // Add to container (suggestion label hidden)
         containerView.addSubview(commandTextField)
+        containerView.addSubview(microphoneButton)
         containerView.addSubview(loadingIndicator)
         
         // Add container to blur view
@@ -164,6 +198,7 @@ class CommandWindow: NSWindow {
         containerView.translatesAutoresizingMaskIntoConstraints = false
         commandTextField.translatesAutoresizingMaskIntoConstraints = false
         suggestionLabel.translatesAutoresizingMaskIntoConstraints = false
+        microphoneButton.translatesAutoresizingMaskIntoConstraints = false
         loadingIndicator.translatesAutoresizingMaskIntoConstraints = false
         
         NSLayoutConstraint.activate([
@@ -176,8 +211,14 @@ class CommandWindow: NSWindow {
             // Command text field - centered vertically
             commandTextField.centerYAnchor.constraint(equalTo: containerView.centerYAnchor),
             commandTextField.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 24),
-            commandTextField.trailingAnchor.constraint(equalTo: loadingIndicator.leadingAnchor, constant: -16),
+            commandTextField.trailingAnchor.constraint(equalTo: microphoneButton.leadingAnchor, constant: -12),
             commandTextField.heightAnchor.constraint(equalToConstant: 48),
+            
+            // Microphone button
+            microphoneButton.centerYAnchor.constraint(equalTo: commandTextField.centerYAnchor),
+            microphoneButton.trailingAnchor.constraint(equalTo: loadingIndicator.leadingAnchor, constant: -8),
+            microphoneButton.widthAnchor.constraint(equalToConstant: 32),
+            microphoneButton.heightAnchor.constraint(equalToConstant: 32),
             
             // Loading indicator
             loadingIndicator.centerYAnchor.constraint(equalTo: commandTextField.centerYAnchor),
@@ -388,6 +429,24 @@ class CommandWindow: NSWindow {
         processCommand(command)
     }
     
+    @objc private func microphoneButtonTapped(_ sender: NSButton) {
+        print("🎤 Microphone button tapped. Current isListening: \(speechService.isListening)")
+        
+        if speechService.isListening {
+            // Stop listening
+            print("🎤 Stopping recording...")
+            speechService.stopListening()
+            updateMicrophoneButtonState(listening: false)
+        } else {
+            // Start listening
+            print("🎤 Starting recording...")
+            // Reset transcribed text before starting new session
+            speechService.transcribedText = ""
+            speechService.startListening()
+            updateMicrophoneButtonState(listening: speechService.isListening)
+        }
+    }
+    
     private func processCommand(_ command: String) {
         // Send command to main app coordinator
         NotificationCenter.default.post(
@@ -399,6 +458,65 @@ class CommandWindow: NSWindow {
         // Hide window after command execution with appropriate QoS
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, qos: .userInteractive) {
             self.hideWindow()
+        }
+    }
+    
+    // MARK: - Speech Recognition Helpers
+    
+    private func updateMicrophoneButtonState(listening: Bool) {
+        if listening {
+            // Change to recording state - red pulsing effect
+            microphoneButton.layer?.backgroundColor = NSColor.systemRed.withAlphaComponent(0.3).cgColor
+            microphoneButton.toolTip = "Recording... Click to stop"
+            
+            // Animate pulsing effect
+            let pulseAnimation = CABasicAnimation(keyPath: "opacity")
+            pulseAnimation.duration = 1.0
+            pulseAnimation.fromValue = 0.3
+            pulseAnimation.toValue = 1.0
+            pulseAnimation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            pulseAnimation.autoreverses = true
+            pulseAnimation.repeatCount = .infinity
+            microphoneButton.layer?.add(pulseAnimation, forKey: "pulse")
+            
+            // Update icon to recording state
+            if let micIcon = NSImage(systemSymbolName: "mic.circle.fill", accessibilityDescription: "Recording") {
+                micIcon.size = NSSize(width: 20, height: 20)
+                microphoneButton.image = micIcon
+            }
+        } else {
+            // Change back to normal state
+            microphoneButton.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.1).cgColor
+            microphoneButton.toolTip = "Click to start voice input"
+            
+            // Remove pulsing animation
+            microphoneButton.layer?.removeAnimation(forKey: "pulse")
+            
+            // Update icon to normal state
+            if let micIcon = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: "Microphone") {
+                micIcon.size = NSSize(width: 20, height: 20)
+                microphoneButton.image = micIcon
+            }
+        }
+    }
+    
+    private func handleTranscriptionCompleted(_ text: String) {
+        print("🎤 Transcription completed: '\(text)'")
+        print("🎤 Speech service isListening after completion: \(speechService.isListening)")
+        
+        // Set the transcribed text in the command field
+        commandTextField.stringValue = text
+        
+        // Ensure button state is reset
+        updateMicrophoneButtonState(listening: false)
+        
+        // Automatically process the command if it's not empty
+        let cleanedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !cleanedText.isEmpty {
+            // Small delay to let user see the transcribed text
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                self.processCommand(cleanedText)
+            }
         }
     }
     
