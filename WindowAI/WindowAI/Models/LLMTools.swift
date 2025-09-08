@@ -84,13 +84,71 @@ struct AnyCodable: Codable {
 class WindowManagementTools {
     
     static let allTools: [LLMTool] = [
-        closeAppTool,
-        applyLayoutTool,
+        // Basic app operations
         openAppTool,
+        closeAppTool,
         minimizeAppTool,
-        focusAppTool
+        focusAppTool,
+        
+        // Simple positioning tools (hardcoded layouts)
+        leftHalfTool,
+        rightHalfTool,
+        topHalfTool,
+        bottomHalfTool,
+        leftTopQuarterTool,
+        rightTopQuarterTool,
+        leftBottomQuarterTool,
+        rightBottomQuarterTool,
+        fullScreenTool,
+        centerTool
     ]
     
+    // Flexible positioning tool for precise window control
+    static let flexiblePositionTool = LLMTool(
+        name: "flexible_position",
+        description: "Position, resize, focus, minimize, or restore a window with precise control. Use this for all window positioning operations.",
+        input_schema: LLMTool.ToolInputSchema(
+            properties: [
+                "app_name": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "string",
+                    description: "Name of the application whose window to control"
+                ),
+                "x_position": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "string",
+                    description: "X position as percentage (e.g., '0' for left edge, '50' for center). Optional - only for positioning"
+                ),
+                "y_position": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "string", 
+                    description: "Y position as percentage (e.g., '0' for top edge, '50' for center). Optional - only for positioning"
+                ),
+                "width": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "string",
+                    description: "Width as percentage (e.g., '50' for half screen width). Optional - only for positioning"
+                ),
+                "height": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "string",
+                    description: "Height as percentage (e.g., '100' for full screen height). Optional - only for positioning"
+                ),
+                "minimize": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "boolean",
+                    description: "Set to true to minimize window, false to restore from minimized state"
+                ),
+                "focus": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "boolean",
+                    description: "Set to true to bring window to front and focus it"
+                ),
+                "layer": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "integer",
+                    description: "Window layer depth (0=back, 1=side, 2=middle, 3=front). Controls stacking order"
+                ),
+                "display": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "integer",
+                    description: "Display index (0 for main display, 1 for second display, etc.)"
+                )
+            ],
+            required: ["app_name"]
+        )
+    )
     
     // Resize window to specific size
     static let resizeWindowTool = LLMTool(
@@ -354,6 +412,214 @@ class WindowManagementTools {
             required: ["app_name"]
         )
     )
+    
+    // MARK: - Hardcoded Layout Tools
+    
+    static let leftHalfTool = LLMTool(
+        name: "left_half",
+        description: "Position a window to fill the left half of the screen",
+        input_schema: LLMTool.ToolInputSchema(
+            properties: [
+                "app_name": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "string",
+                    description: "Name of the application to position"
+                )
+            ],
+            required: ["app_name"]
+        )
+    )
+    
+    static let rightHalfTool = LLMTool(
+        name: "right_half", 
+        description: "Position a window to fill the right half of the screen",
+        input_schema: LLMTool.ToolInputSchema(
+            properties: [
+                "app_name": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "string",
+                    description: "Name of the application to position"
+                )
+            ],
+            required: ["app_name"]
+        )
+    )
+    
+    static let topHalfTool = LLMTool(
+        name: "top_half",
+        description: "Position a window to fill the top half of the screen", 
+        input_schema: LLMTool.ToolInputSchema(
+            properties: [
+                "app_name": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "string",
+                    description: "Name of the application to position"
+                )
+            ],
+            required: ["app_name"]
+        )
+    )
+    
+    static let bottomHalfTool = LLMTool(
+        name: "bottom_half",
+        description: "Position a window to fill the bottom half of the screen",
+        input_schema: LLMTool.ToolInputSchema(
+            properties: [
+                "app_name": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "string", 
+                    description: "Name of the application to position"
+                )
+            ],
+            required: ["app_name"]
+        )
+    )
+    
+    static let leftTopQuarterTool = LLMTool(
+        name: "left_top_quarter",
+        description: "Position a window to fill the top-left quarter of the screen",
+        input_schema: LLMTool.ToolInputSchema(
+            properties: [
+                "app_name": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "string",
+                    description: "Name of the application to position"
+                )
+            ],
+            required: ["app_name"]
+        )
+    )
+    
+    static let rightTopQuarterTool = LLMTool(
+        name: "right_top_quarter", 
+        description: "Position a window to fill the top-right quarter of the screen",
+        input_schema: LLMTool.ToolInputSchema(
+            properties: [
+                "app_name": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "string",
+                    description: "Name of the application to position"
+                )
+            ],
+            required: ["app_name"]
+        )
+    )
+    
+    static let leftBottomQuarterTool = LLMTool(
+        name: "left_bottom_quarter",
+        description: "Position a window to fill the bottom-left quarter of the screen", 
+        input_schema: LLMTool.ToolInputSchema(
+            properties: [
+                "app_name": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "string",
+                    description: "Name of the application to position"
+                )
+            ],
+            required: ["app_name"]
+        )
+    )
+    
+    static let rightBottomQuarterTool = LLMTool(
+        name: "right_bottom_quarter",
+        description: "Position a window to fill the bottom-right quarter of the screen",
+        input_schema: LLMTool.ToolInputSchema(
+            properties: [
+                "app_name": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "string",
+                    description: "Name of the application to position"
+                )
+            ],
+            required: ["app_name"]
+        )
+    )
+    
+    static let fullScreenTool = LLMTool(
+        name: "full_screen",
+        description: "Position a window to fill the entire screen",
+        input_schema: LLMTool.ToolInputSchema(
+            properties: [
+                "app_name": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "string",
+                    description: "Name of the application to position"
+                )
+            ],
+            required: ["app_name"]
+        )
+    )
+    
+    static let centerTool = LLMTool(
+        name: "center_window",
+        description: "Center a window on screen at 70% width and height",
+        input_schema: LLMTool.ToolInputSchema(
+            properties: [
+                "app_name": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "string",
+                    description: "Name of the application to position"
+                )
+            ],
+            required: ["app_name"]
+        )
+    )
+    
+    static let splitTwoAppsTool = LLMTool(
+        name: "split_two_apps", 
+        description: "Split two apps side by side (50/50) - first app on left, second on right",
+        input_schema: LLMTool.ToolInputSchema(
+            properties: [
+                "left_app": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "string",
+                    description: "App to place on the left half"
+                ),
+                "right_app": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "string",
+                    description: "App to place on the right half"
+                )
+            ],
+            required: ["left_app", "right_app"]
+        )
+    )
+    
+    static let threeAppLayoutTool = LLMTool(
+        name: "three_app_layout",
+        description: "Layout three apps: main app on left 50%, two apps stacked on right 50%",
+        input_schema: LLMTool.ToolInputSchema(
+            properties: [
+                "main_app": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "string",
+                    description: "Main app for left half"
+                ),
+                "top_right_app": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "string",
+                    description: "App for top-right quarter" 
+                ),
+                "bottom_right_app": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "string",
+                    description: "App for bottom-right quarter"
+                )
+            ],
+            required: ["main_app", "top_right_app", "bottom_right_app"]
+        )
+    )
+    
+    static let fourAppLayoutTool = LLMTool(
+        name: "four_app_layout",
+        description: "Layout four apps in quadrants: top-left, top-right, bottom-left, bottom-right",
+        input_schema: LLMTool.ToolInputSchema(
+            properties: [
+                "top_left_app": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "string",
+                    description: "App for top-left quarter"
+                ),
+                "top_right_app": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "string",
+                    description: "App for top-right quarter"
+                ),
+                "bottom_left_app": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "string",
+                    description: "App for bottom-left quarter" 
+                ),
+                "bottom_right_app": LLMTool.ToolInputSchema.PropertyDefinition(
+                    type: "string",
+                    description: "App for bottom-right quarter"
+                )
+            ],
+            required: ["top_left_app", "top_right_app", "bottom_left_app", "bottom_right_app"]
+        )
+    )
 }
 
 // MARK: - Tool to Command Converter
@@ -402,17 +668,45 @@ class ToolToCommandConverter {
         }
         
         switch toolUse.name {
-        case "close_app":
-            return convertCloseApp(input)
-        case "apply_layout":
-            return convertApplyLayout(input)
+        // Basic app operations
         case "open_app":
             return convertOpenApp(input)
+        case "close_app":
+            return convertCloseApp(input)
         case "minimize_app":
             return convertMinimizeApp(input)
         case "focus_app":
             return convertFocusApp(input)
-        // flexible_position removed - use apply_layout tool instead
+            
+        // Simple positioning tools (hardcoded layouts)
+        case "left_half":
+            return convertLeftHalf(input)
+        case "right_half":
+            return convertRightHalf(input)
+        case "top_half":
+            return convertTopHalf(input)
+        case "bottom_half":
+            return convertBottomHalf(input)
+        case "left_top_quarter":
+            return convertLeftTopQuarter(input)
+        case "right_top_quarter":
+            return convertRightTopQuarter(input)
+        case "left_bottom_quarter":
+            return convertLeftBottomQuarter(input)
+        case "right_bottom_quarter":
+            return convertRightBottomQuarter(input)
+        case "full_screen":
+            return convertFullScreen(input)
+        case "center_window":
+            return convertCenterWindow(input)
+            
+            
+        // Legacy tools
+        case "apply_layout":
+            return convertApplyLayout(input)
+        case "flexible_position":
+            return convertFlexiblePosition(input)
+            
         default:
             return nil
         }
@@ -779,6 +1073,194 @@ class ToolToCommandConverter {
             target: appName,
             customSize: nil,
             customPosition: nil
+        )
+    }
+    
+    // MARK: - Hardcoded Layout Converters
+    
+    private static func convertLeftHalf(_ input: [String: Any]) -> WindowCommand? {
+        guard let appName = input["app_name"] as? String else { return nil }
+        let screenBounds = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+        return WindowCommand(
+            action: .move,
+            target: appName,
+            position: .precise,
+            size: .precise,
+            customSize: CGSize(width: screenBounds.width / 2, height: screenBounds.height),
+            customPosition: CGPoint(x: 0, y: 0)
+        )
+    }
+    
+    private static func convertRightHalf(_ input: [String: Any]) -> WindowCommand? {
+        guard let appName = input["app_name"] as? String else { return nil }
+        let screenBounds = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+        return WindowCommand(
+            action: .move,
+            target: appName,
+            position: .precise,
+            size: .precise,
+            customSize: CGSize(width: screenBounds.width / 2, height: screenBounds.height),
+            customPosition: CGPoint(x: screenBounds.width / 2, y: 0)
+        )
+    }
+    
+    private static func convertTopHalf(_ input: [String: Any]) -> WindowCommand? {
+        guard let appName = input["app_name"] as? String else { return nil }
+        let screenBounds = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+        return WindowCommand(
+            action: .move,
+            target: appName,
+            position: .precise,
+            size: .precise,
+            customSize: CGSize(width: screenBounds.width, height: screenBounds.height / 2),
+            customPosition: CGPoint(x: 0, y: 0)
+        )
+    }
+    
+    private static func convertBottomHalf(_ input: [String: Any]) -> WindowCommand? {
+        guard let appName = input["app_name"] as? String else { return nil }
+        let screenBounds = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+        return WindowCommand(
+            action: .move,
+            target: appName,
+            position: .precise,
+            size: .precise,
+            customSize: CGSize(width: screenBounds.width, height: screenBounds.height / 2),
+            customPosition: CGPoint(x: 0, y: screenBounds.height / 2)
+        )
+    }
+    
+    private static func convertLeftTopQuarter(_ input: [String: Any]) -> WindowCommand? {
+        guard let appName = input["app_name"] as? String else { return nil }
+        let screenBounds = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+        return WindowCommand(
+            action: .move,
+            target: appName,
+            position: .precise,
+            size: .precise,
+            customSize: CGSize(width: screenBounds.width / 2, height: screenBounds.height / 2),
+            customPosition: CGPoint(x: 0, y: 0)
+        )
+    }
+    
+    private static func convertRightTopQuarter(_ input: [String: Any]) -> WindowCommand? {
+        guard let appName = input["app_name"] as? String else { return nil }
+        let screenBounds = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+        return WindowCommand(
+            action: .move,
+            target: appName,
+            position: .precise,
+            size: .precise,
+            customSize: CGSize(width: screenBounds.width / 2, height: screenBounds.height / 2),
+            customPosition: CGPoint(x: screenBounds.width / 2, y: 0)
+        )
+    }
+    
+    private static func convertLeftBottomQuarter(_ input: [String: Any]) -> WindowCommand? {
+        guard let appName = input["app_name"] as? String else { return nil }
+        let screenBounds = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+        return WindowCommand(
+            action: .move,
+            target: appName,
+            position: .precise,
+            size: .precise,
+            customSize: CGSize(width: screenBounds.width / 2, height: screenBounds.height / 2),
+            customPosition: CGPoint(x: 0, y: screenBounds.height / 2)
+        )
+    }
+    
+    private static func convertRightBottomQuarter(_ input: [String: Any]) -> WindowCommand? {
+        guard let appName = input["app_name"] as? String else { return nil }
+        let screenBounds = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+        return WindowCommand(
+            action: .move,
+            target: appName,
+            position: .precise,
+            size: .precise,
+            customSize: CGSize(width: screenBounds.width / 2, height: screenBounds.height / 2),
+            customPosition: CGPoint(x: screenBounds.width / 2, y: screenBounds.height / 2)
+        )
+    }
+    
+    private static func convertFullScreen(_ input: [String: Any]) -> WindowCommand? {
+        guard let appName = input["app_name"] as? String else { return nil }
+        let screenBounds = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+        return WindowCommand(
+            action: .move,
+            target: appName,
+            position: .precise,
+            size: .precise,
+            customSize: CGSize(width: screenBounds.width, height: screenBounds.height),
+            customPosition: CGPoint(x: 0, y: 0)
+        )
+    }
+    
+    private static func convertCenterWindow(_ input: [String: Any]) -> WindowCommand? {
+        guard let appName = input["app_name"] as? String else { return nil }
+        let screenBounds = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+        let width = screenBounds.width * 0.7
+        let height = screenBounds.height * 0.7
+        return WindowCommand(
+            action: .move,
+            target: appName,
+            position: .precise,
+            size: .precise,
+            customSize: CGSize(width: width, height: height),
+            customPosition: CGPoint(x: (screenBounds.width - width) / 2, y: (screenBounds.height - height) / 2)
+        )
+    }
+    
+    // MARK: - Multi-App Layout Converters
+    
+    private static func convertSplitTwoApps(_ input: [String: Any]) -> WindowCommand? {
+        // This needs to return multiple commands, but our system expects one
+        // For now, just return the left app command - the system will need to be updated
+        // to handle multi-command tools
+        guard let leftApp = input["left_app"] as? String else { return nil }
+        let screenBounds = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+        return WindowCommand(
+            action: .move,
+            target: leftApp,
+            position: .precise,
+            size: .precise,
+            customSize: CGSize(width: screenBounds.width / 2, height: screenBounds.height),
+            customPosition: CGPoint(x: 0, y: 0),
+            parameters: ["right_app": input["right_app"] as? String ?? ""]
+        )
+    }
+    
+    private static func convertThreeAppLayout(_ input: [String: Any]) -> WindowCommand? {
+        guard let mainApp = input["main_app"] as? String else { return nil }
+        let screenBounds = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+        return WindowCommand(
+            action: .move,
+            target: mainApp,
+            position: .precise,
+            size: .precise,
+            customSize: CGSize(width: screenBounds.width / 2, height: screenBounds.height),
+            customPosition: CGPoint(x: 0, y: 0),
+            parameters: [
+                "top_right_app": input["top_right_app"] as? String ?? "",
+                "bottom_right_app": input["bottom_right_app"] as? String ?? ""
+            ]
+        )
+    }
+    
+    private static func convertFourAppLayout(_ input: [String: Any]) -> WindowCommand? {
+        guard let topLeftApp = input["top_left_app"] as? String else { return nil }
+        let screenBounds = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+        return WindowCommand(
+            action: .move,
+            target: topLeftApp,
+            position: .precise,
+            size: .precise,
+            customSize: CGSize(width: screenBounds.width / 2, height: screenBounds.height / 2),
+            customPosition: CGPoint(x: 0, y: 0),
+            parameters: [
+                "top_right_app": input["top_right_app"] as? String ?? "",
+                "bottom_left_app": input["bottom_left_app"] as? String ?? "",
+                "bottom_right_app": input["bottom_right_app"] as? String ?? ""
+            ]
         )
     }
 }

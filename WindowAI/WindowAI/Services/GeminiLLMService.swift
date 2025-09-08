@@ -217,6 +217,7 @@ class GeminiLLMService {
     // MARK: - Public API
     func processCommand(_ userInput: String, context: LLMContext? = nil) async throws -> [WindowCommand] {
         print("\n🤖 USER COMMAND: \"\(userInput)\"")
+        FileLogger.shared.logWithEmoji("🤖", "USER COMMAND: \"\(userInput)\"")
         
         let windowCount = context?.visibleWindows.count ?? 0
         print("📊 Processing \(windowCount) windows")
@@ -310,24 +311,18 @@ class GeminiLLMService {
         
         You are WindowAI for macOS window management.
         
-        ALWAYS use this 4-window layout template:
+        SIMPLE TOOL USAGE:
+        - ALWAYS use individual positioning tools for each app mentioned
+        - For "X left half, Y right half" → call left_half(app_name: "X") AND right_half(app_name: "Y")
+        - Minimize extra apps that aren't needed
         
-        Main Window (left 60%, full height):
-        flexible_position(app_name: "MainApp", x_position: "0", y_position: "0", width: "60", height: "100", layer: 3, focus: true)
+        EXAMPLES:
+        "Terminal left half, Arc right half" → left_half(app_name: "Terminal") AND right_half(app_name: "Arc")
+        "Xcode left half, Arc right half" → left_half(app_name: "Xcode") AND right_half(app_name: "Arc")
+        "Center Xcode" → center_window(app_name: "Xcode")
+        "Terminal top left, Arc top right" → left_top_quarter(app_name: "Terminal") AND right_top_quarter(app_name: "Arc")
         
-        Right Window 1 (top right, 33% height):
-        flexible_position(app_name: "App2", x_position: "60", y_position: "0", width: "40", height: "33", layer: 1, focus: false)
-        
-        Right Window 2 (middle right, 34% height):
-        flexible_position(app_name: "App3", x_position: "60", y_position: "33", width: "40", height: "34", layer: 1, focus: false)
-        
-        Right Window 3 (bottom right, 33% height):
-        flexible_position(app_name: "App4", x_position: "60", y_position: "67", width: "40", height: "33", layer: 1, focus: false)
-        
-        Minimize any extra apps:
-        flexible_position(app_name: "ExtraApp", minimize: true)
-        
-        Your job: Choose which apps go in each slot based on the user's request. Put the most important app for the task in the Main Window slot.
+        CRITICAL: For multiple apps, make multiple individual tool calls - one for each app.
         """
         
         
@@ -512,16 +507,14 @@ class GeminiLLMService {
         - Browser apps: x_position=20-80% with 5-10% offsets for cascade
         - Example: Terminal x="0" width="25", Xcode x="25" width="75" (NOT both x="0")
         
-        TOOL USAGE:
-        Use `flexible_position` for ALL operations:
-        - minimize: false → unminimize window
-        - focus: true → focus window
-        - positioning: x_position, y_position, width, height (percentages)
-        - layer: 0=back, 1=side, 2=middle, 3=front
+        AVAILABLE TOOLS:
+        Positioning: left_half, right_half, top_half, bottom_half, full_screen, center_window
+        Quarter positioning: left_top_quarter, right_top_quarter, left_bottom_quarter, right_bottom_quarter  
+        Basic operations: open_app, close_app, minimize_app, focus_app
         
         EXAMPLES:
-        "unminimize all windows" → flexible_position(app_name: "AppName", minimize: false) for each minimized window
-        "rearrange windows" → position ALL unminimized windows with different x_position values
+        "unminimize all windows" → Position each visible app individually using positioning tools
+        "rearrange windows" → Use appropriate positioning tool for each app individually
         """
         
         // Add only essential context

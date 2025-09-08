@@ -657,18 +657,25 @@ class WindowManager {
         guard checkAccessibilityPermissions() else { return false }
         
         print("🔍 setWindowBounds DEBUG:")
+        FileLogger.shared.logWithEmoji("🔍", "setWindowBounds DEBUG:")
         print("   App: \(windowInfo.appName)")
+        FileLogger.shared.log("   App: \(windowInfo.appName)")
         print("   Input bounds: \(bounds)")
+        FileLogger.shared.log("   Input bounds: \(bounds)")
         print("   Validate: \(validate)")
+        FileLogger.shared.log("   Validate: \(validate)")
         
         // FIXED: Get current bounds BEFORE attempting to move
         let currentBounds = windowInfo.bounds
         print("   Current bounds: \(currentBounds)")
+        FileLogger.shared.log("   Current bounds: \(currentBounds)")
         
         // Validate bounds against app constraints and screen bounds (unless disabled)
         let finalBounds = validate ? validateWindowBounds(bounds, for: windowInfo.appName) : bounds
         print("   Final bounds: \(finalBounds)")
+        FileLogger.shared.log("   Final bounds: \(finalBounds)")
         print("   Bounds changed by validation: \(bounds != finalBounds)")
+        FileLogger.shared.log("   Bounds changed by validation: \(bounds != finalBounds)")
         
         // FIXED: Check if window is already at target position/size (within 5px tolerance)
         let positionTolerance: CGFloat = 5.0
@@ -724,11 +731,16 @@ class WindowManager {
             let apiSuccess = positionResult == .success && sizeResult == .success
             if apiSuccess {
                 print("   ❌ Window movement FAILED - API succeeded but didn't reach target bounds")
+                FileLogger.shared.logWithEmoji("❌", "Window movement FAILED - API succeeded but didn't reach target bounds")
                 print("      Target: \(Int(finalBounds.origin.x)),\(Int(finalBounds.origin.y)) \(Int(finalBounds.width))x\(Int(finalBounds.height))")
+                FileLogger.shared.log("      Target: \(Int(finalBounds.origin.x)),\(Int(finalBounds.origin.y)) \(Int(finalBounds.width))x\(Int(finalBounds.height))")
                 print("      Actual: \(Int(newBounds.origin.x)),\(Int(newBounds.origin.y)) \(Int(newBounds.width))x\(Int(newBounds.height))")
+                FileLogger.shared.log("      Actual: \(Int(newBounds.origin.x)),\(Int(newBounds.origin.y)) \(Int(newBounds.width))x\(Int(newBounds.height))")
                 print("      Position achieved: \(targetPositionAchieved), Size achieved: \(targetSizeAchieved)")
+                FileLogger.shared.log("      Position achieved: \(targetPositionAchieved), Size achieved: \(targetSizeAchieved)")
             } else {
                 print("   ❌ Window movement FAILED - API returned error")
+                FileLogger.shared.logWithEmoji("❌", "Window movement FAILED - API returned error")
             }
         }
         

@@ -22,6 +22,7 @@ class LayoutService {
     func applyLayout(_ layoutName: String, to appNames: [String], focusApp: String? = nil) -> (success: Bool, message: String) {
         
         print("🎯 Applying layout '\(layoutName)' to apps: \(appNames.joined(separator: ", "))")
+        FileLogger.shared.logWithEmoji("🎯", "Applying layout '\(layoutName)' to apps: \(appNames.joined(separator: ", "))")
         
         // Parse layout name
         guard let layout = WindowLayout(rawValue: layoutName) else {
@@ -77,8 +78,12 @@ class LayoutService {
         if let focusApp = focusApp, appNames.contains(focusApp) {
             let windows = windowManager.getWindowsForApp(named: focusApp)
             if let window = windows.first {
-                windowManager.focusWindow(window)
-                print("  🎯 Focused \(focusApp)")
+                let focusSuccess = windowManager.focusWindow(window)
+                if focusSuccess {
+                    print("  🎯 Focused \(focusApp)")
+                } else {
+                    print("  ⚠️ Failed to focus \(focusApp)")
+                }
             }
         }
         

@@ -693,7 +693,10 @@ class WindowPositioner {
             }
             
             // Wait for all unminimize operations to complete efficiently
-            waitForUnminimizeOperationsComplete(windows: allWindows, timeout: 3.0)
+            let unminimizeSuccess = waitForUnminimizeOperationsComplete(windows: allWindows, timeout: 3.0)
+            if !unminimizeSuccess {
+                print("⚠️ Some windows may not have fully unminimized")
+            }
             
             // PHASE 2: Use NEW FlexibleLayoutEngine instead of old cascade positioner
             print("\n📐 PHASE 2: Intelligent FlexibleLayoutEngine positioning")
@@ -820,20 +823,26 @@ class WindowPositioner {
                 print("  🚀 \(appContext.appName) not running - launching...")
                 // App not running, launch it
                 let bundleID = appContext.bundleID
-                if NSWorkspace.shared.launchApplication(withBundleIdentifier: bundleID, 
-                                                       options: [], 
-                                                       additionalEventParamDescriptor: nil, 
-                                                       launchIdentifier: nil) {
-                    results.append("Launched \(appContext.appName)")
-                    print("    ✅ Launched successfully")
-                    // Wait efficiently for the app window to be ready
-                    if !waitForAppWindowReadySync(appName: appContext.appName, timeout: getAppLaunchTimeout(for: appContext.appName)) {
-                        print("    ⚠️ App launched but window not ready within timeout")
-                        errors.append("Window not ready for \(appContext.appName)")
+                if let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
+                    do {
+                        let configuration = NSWorkspace.OpenConfiguration()
+                        configuration.activates = true
+                        try NSWorkspace.shared.openApplication(at: appURL, configuration: configuration)
+                        // Success - app launched
+                        results.append("Launched \(appContext.appName)")
+                        print("    ✅ Launched successfully")
+                        // Wait efficiently for the app window to be ready
+                        if !waitForAppWindowReadySync(appName: appContext.appName, timeout: getAppLaunchTimeout(for: appContext.appName)) {
+                            print("    ⚠️ App launched but window not ready within timeout")
+                            errors.append("Window not ready for \(appContext.appName)")
+                        }
+                    } catch {
+                        print("    ❌ Failed to launch: \(error.localizedDescription)")
+                        errors.append("Failed to launch \(appContext.appName): \(error.localizedDescription)")
                     }
                 } else {
-                    print("    ❌ Failed to launch")
-                    errors.append("Failed to launch \(appContext.appName)")
+                    print("    ❌ App not found with bundle ID: \(bundleID)")
+                    errors.append("App not found: \(appContext.appName)")
                 }
             } else {
                 print("  ✓ \(appContext.appName) already running (\(windows.count) window(s))")
@@ -1145,7 +1154,10 @@ class WindowPositioner {
         }
         
         // Wait for all unminimize operations to complete efficiently
-        waitForUnminimizeOperationsComplete(windows: windows, timeout: 3.0)
+        let unminimizeSuccess = waitForUnminimizeOperationsComplete(windows: windows, timeout: 3.0)
+        if !unminimizeSuccess {
+            print("⚠️ Some windows may not have fully unminimized")
+        }
         
         print("\n📐 PHASE 2: Positioning all windows")
         print("==================================")
@@ -1327,7 +1339,10 @@ class WindowPositioner {
         }
         
         // Wait for all unminimize operations to complete efficiently
-        waitForUnminimizeOperationsComplete(windows: windows, timeout: 3.0)
+        let unminimizeSuccess = waitForUnminimizeOperationsComplete(windows: windows, timeout: 3.0)
+        if !unminimizeSuccess {
+            print("⚠️ Some windows may not have fully unminimized")
+        }
         
         // PHASE 2: Position ALL windows
         print("\n📐 PHASE 2: Positioning all windows")

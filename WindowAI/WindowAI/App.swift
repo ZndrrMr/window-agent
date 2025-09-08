@@ -98,10 +98,13 @@ class WindowAIController: HotkeyManagerDelegate, LLMServiceDelegate {
         // Setup hotkey manager
         hotkeyManager.delegate = self
         if preferences.hotkeyEnabled {
-            hotkeyManager.registerHotkey(
+            let hotkeySuccess = hotkeyManager.registerHotkey(
                 keyCode: preferences.hotkeyKeyCode,
                 modifiers: preferences.hotkeyModifiers
             )
+            if !hotkeySuccess {
+                print("⚠️ Failed to register hotkey")
+            }
         } else {
             print("⚠️ Hotkey disabled in preferences")
         }
@@ -197,10 +200,13 @@ class WindowAIController: HotkeyManagerDelegate, LLMServiceDelegate {
     func updateHotkey() {
         hotkeyManager.unregisterHotkey()
         if preferences.hotkeyEnabled {
-            hotkeyManager.registerHotkey(
+            let hotkeySuccess = hotkeyManager.registerHotkey(
                 keyCode: preferences.hotkeyKeyCode,
                 modifiers: preferences.hotkeyModifiers
             )
+            if !hotkeySuccess {
+                print("⚠️ Failed to update hotkey")
+            }
         }
     }
     
@@ -706,6 +712,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Direct file write test
+        try? "DIRECT TEST: AppDelegate started at \(Date())\n".write(to: URL(fileURLWithPath: "/tmp/windowai_debug_output.log"), atomically: false, encoding: .utf8)
+        
         // Check accessibility permissions
         if !AXIsProcessTrusted() {
             let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary
@@ -722,6 +731,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         
         print("\n🚀 WindowAI Started!\n")
+        FileLogger.shared.log("Simple test from App.swift startup")
+        FileLogger.shared.logWithEmoji("🚀", "WindowAI Started!")
         
         windowAIController = WindowAIController()
         setupMenuBar()
